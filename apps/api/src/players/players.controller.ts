@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import { PlayersService } from './players.service';
-import { PlayerRole } from '@prisma/client';
+import { CreatePlayerDto } from './dto/create-player.dto';
 
 @Controller('players')
 export class PlayersController {
@@ -12,16 +12,7 @@ export class PlayersController {
   }
 
   @Post()
-  create(
-    @Body()
-    body: {
-      name: string;
-      role: PlayerRole;
-      country?: string;
-      basePrice: number;
-      isOverseas?: boolean;
-    },
-  ) {
+  create(@Body() body: CreatePlayerDto) {
     return this.playersService.create(body);
   }
 }

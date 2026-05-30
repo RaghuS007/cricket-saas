@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { PlayerRole } from '@prisma/client';
+import { CreatePlayerDto } from './dto/create-player.dto';
 
 @Injectable()
 export class PlayersService {
@@ -10,13 +10,7 @@ export class PlayersService {
     return this.prisma.player.findMany();
   }
 
-  create(data: {
-    name: string;
-    role: PlayerRole;
-    country?: string;
-    basePrice: number;
-    isOverseas?: boolean;
-  }) {
+  create(data: CreatePlayerDto) {
     return this.prisma.player.create({ data });
   }
 }
