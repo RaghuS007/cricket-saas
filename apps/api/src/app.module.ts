@@ -7,6 +7,7 @@ import { PrismaModule } from './prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { PlayersModule } from './players/players.module';
+import { AuctionModule } from './auction/auction.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { PlayersModule } from './players/players.module';
     PrismaModule,
     AuthModule,
     PlayersModule,
+    AuctionModule,
   ],
   controllers: [AppController],
   providers: [

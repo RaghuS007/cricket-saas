@@ -1,5 +1,15 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000'
 
+export async function apiGet(path: string, accessToken: string) {
+  const res = await fetch(`${API_URL}${path}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    // Opt out of Next.js cache so auction state is always fresh
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`API ${path} → ${res.status}`)
+  return res.json()
+}
+
 export async function apiPost(path: string, accessToken: string, body?: unknown) {
   const res = await fetch(`${API_URL}${path}`, {
     method: 'POST',
