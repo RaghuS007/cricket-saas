@@ -32,7 +32,8 @@ export async function middleware(request: NextRequest) {
   const isPublicPath =
     pathname.startsWith('/login') ||
     pathname.startsWith('/register') ||
-    pathname.startsWith('/auth/')
+    pathname.startsWith('/auth/') ||
+    pathname.startsWith('/onboarding')
 
   // Unauthenticated → redirect to login
   if (!user && !isPublicPath) {

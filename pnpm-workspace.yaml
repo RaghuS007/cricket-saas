@@ -9,3 +9,4 @@ allowBuilds:
   unrs-resolver: false
   sharp: true
   msw: true
+  esbuild: true

@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { PlayersModule } from './players/players.module';
 import { AuctionModule } from './auction/auction.module';
+import { OrganizationModule } from './organization/organization.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { AuctionModule } from './auction/auction.module';
     AuthModule,
     PlayersModule,
     AuctionModule,
+    OrganizationModule,
   ],
   controllers: [AppController],
   providers: [
