@@ -12,10 +12,10 @@ import { PlayerRole } from '@prisma/client';
 export class CreatePlayerDto {
   @IsString()
   @MinLength(1)
-  name: string;
+  name!: string;
 
   @IsEnum(PlayerRole)
-  role: PlayerRole;
+  role!: PlayerRole;
 
   @IsOptional()
   @IsString()
@@ -23,9 +23,13 @@ export class CreatePlayerDto {
 
   @IsNumber()
   @Min(0)
-  basePrice: number;
+  basePrice!: number;
 
   @IsOptional()
   @IsBoolean()
   isOverseas?: boolean;
+
+  @IsOptional()
+  @IsString()
+  organizationId?: string;
 }
