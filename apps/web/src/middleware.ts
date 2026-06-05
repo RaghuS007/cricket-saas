@@ -7,7 +7,8 @@ export function middleware(request: NextRequest) {
   const isPublicPath =
     pathname.startsWith('/login') ||
     pathname.startsWith('/register') ||
-    pathname.startsWith('/onboarding')
+    pathname.startsWith('/onboarding') ||
+    pathname.startsWith('/dev-login')
 
   if (!token && !isPublicPath) {
     const url = request.nextUrl.clone()
