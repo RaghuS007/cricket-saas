@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { getAccessToken } from '@/lib/auth'
 import { apiPost } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,10 +36,9 @@ export default function NewAuctionPage() {
     setLoading(true)
     setError(null)
     try {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) throw new Error('Not authenticated')
-      const auction = await apiPost('/auctions', session.access_token, {
+      const token = getAccessToken()
+      if (!token) throw new Error('Not authenticated')
+      const auction = await apiPost('/auctions', token, {
         ...form,
         purseSizePerTeam: Number(form.purseSizePerTeam),
         maxSquadSize: Number(form.maxSquadSize),

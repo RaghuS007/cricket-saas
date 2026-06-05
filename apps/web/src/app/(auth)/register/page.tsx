@@ -1,94 +1,71 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
+import { apiPost } from '@/lib/api'
+import { setAccessToken } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 export default function RegisterPage() {
+  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [displayName, setDisplayName] = useState('')
   const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  async function handleRegister(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
-    setMessage(null)
-
-    const supabase = createClient()
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    })
-
-    if (error) {
-      setMessage({ type: 'error', text: error.message })
-    } else {
-      setMessage({
-        type: 'success',
-        text: 'Check your email for a confirmation link.',
-      })
+    setError(null)
+    try {
+      const data = await apiPost('/auth/register', null, { email, password, displayName: displayName || undefined })
+      setAccessToken(data.accessToken)
+      router.push('/onboarding')
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Registration failed')
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
         <CardTitle className="text-2xl">Create account</CardTitle>
-        <CardDescription>Get started with Cricket SaaS</CardDescription>
+        <CardDescription>Set up your Cricket SaaS account</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {message && (
-          <p
-            className={`rounded-md px-3 py-2 text-sm ${
-              message.type === 'error'
-                ? 'bg-destructive/10 text-destructive'
-                : 'bg-primary/10 text-foreground'
-            }`}
-          >
-            {message.text}
+      <CardContent>
+        {error && (
+          <p className="mb-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
           </p>
         )}
-        <form onSubmit={handleRegister} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="name">Name (optional)</Label>
+            <Input id="name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Your name" />
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
+            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              placeholder="At least 8 characters"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              minLength={8}
-              required
-            />
+            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
+            <p className="text-xs text-muted-foreground">At least 8 characters</p>
           </div>
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? 'Creating account…' : 'Create account'}
           </Button>
         </form>
-
-        <p className="text-center text-sm text-muted-foreground">
+        <p className="mt-4 text-center text-sm text-muted-foreground">
           Already have an account?{' '}
-          <Link href="/login" className="font-medium text-foreground underline underline-offset-4">
+          <Link href="/login" className="underline underline-offset-4">
             Sign in
           </Link>
         </p>

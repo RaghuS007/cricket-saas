@@ -2,7 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { AuthUser, SupabaseJwtPayload } from './auth.types';
+import type { AuthUser } from './auth.types';
+
+interface JwtPayload {
+  sub: string;
+  email: string;
+}
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -10,13 +15,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: config.getOrThrow<string>('SUPABASE_JWT_SECRET'),
+      secretOrKey: config.getOrThrow<string>('JWT_SECRET'),
       algorithms: ['HS256'],
     });
   }
 
-  // Called after signature is verified. Return value is set as req.user.
-  validate(payload: SupabaseJwtPayload): AuthUser {
+  validate(payload: JwtPayload): AuthUser {
     return { id: payload.sub, email: payload.email };
   }
 }

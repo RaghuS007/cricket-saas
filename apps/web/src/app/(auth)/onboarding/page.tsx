@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { apiPost } from '@/lib/api'
+import { getAccessToken } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,10 +25,9 @@ export default function OnboardingPage() {
     setLoading(true)
     setError(null)
     try {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) throw new Error('Not authenticated')
-      await apiPost('/organizations', session.access_token, { name, slug })
+      const token = getAccessToken()
+      if (!token) throw new Error('Not authenticated')
+      await apiPost('/organizations', token, { name, slug })
       router.push('/dashboard')
       router.refresh()
     } catch (err) {
@@ -41,9 +40,7 @@ export default function OnboardingPage() {
     <Card className="w-full max-w-md">
       <CardHeader>
         <CardTitle className="text-2xl">Set up your league</CardTitle>
-        <CardDescription>
-          Create an organization to manage your auctions and matches.
-        </CardDescription>
+        <CardDescription>Create an organization to manage your auctions and matches.</CardDescription>
       </CardHeader>
       <CardContent>
         {error && (
@@ -58,10 +55,7 @@ export default function OnboardingPage() {
               id="name"
               placeholder="Mumbai Premier League"
               value={name}
-              onChange={(e) => {
-                setName(e.target.value)
-                setSlug(deriveSlug(e.target.value))
-              }}
+              onChange={(e) => { setName(e.target.value); setSlug(deriveSlug(e.target.value)) }}
               required
             />
           </div>
@@ -74,9 +68,7 @@ export default function OnboardingPage() {
               onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
               required
             />
-            <p className="text-xs text-muted-foreground">
-              Used in URLs — lowercase letters, digits, hyphens only.
-            </p>
+            <p className="text-xs text-muted-foreground">Lowercase letters, digits, hyphens only.</p>
           </div>
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? 'Creating…' : 'Create league'}

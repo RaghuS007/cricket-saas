@@ -10,3 +10,4 @@ allowBuilds:
   sharp: true
   msw: true
   esbuild: true
+  bcrypt: true

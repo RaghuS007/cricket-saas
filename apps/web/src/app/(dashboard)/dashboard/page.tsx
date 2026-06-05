@@ -1,34 +1,27 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getServerToken } from '@/lib/auth-server'
 import { apiGet } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Auction } from '@/lib/types'
 
 export default async function DashboardPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: { session } } = await supabase.auth.getSession()
+  const token = await getServerToken()
+  if (!token) redirect('/login')
 
-  if (!session) redirect('/login')
-
-  // Check if the user has an org — if not, send them to onboarding.
-  const org = await apiGet('/organizations/me', session.access_token).catch(() => null)
+  const org = await apiGet('/organizations/me', token).catch(() => null)
   if (!org) redirect('/onboarding')
 
-  const auctions: Auction[] = await apiGet('/auctions', session.access_token).catch(() => [])
-
-  const live   = auctions.filter((a) => a.status === 'LIVE').length
-  const draft  = auctions.filter((a) => a.status === 'DRAFT').length
-  const done   = auctions.filter((a) => a.status === 'COMPLETED').length
+  const auctions: Auction[] = await apiGet('/auctions', token).catch(() => [])
+  const live  = auctions.filter((a) => a.status === 'LIVE').length
+  const draft = auctions.filter((a) => a.status === 'DRAFT').length
+  const done  = auctions.filter((a) => a.status === 'COMPLETED').length
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">
-          {org.name} · welcome back, {user?.email}
-        </p>
+        <p className="text-muted-foreground">{org.name}</p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -40,15 +33,11 @@ export default async function DashboardPage() {
         </Card>
         <Card>
           <CardHeader><CardTitle className="text-base">Draft Auctions</CardTitle></CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{draft}</p>
-          </CardContent>
+          <CardContent><p className="text-3xl font-bold">{draft}</p></CardContent>
         </Card>
         <Card>
           <CardHeader><CardTitle className="text-base">Completed</CardTitle></CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-muted-foreground">{done}</p>
-          </CardContent>
+          <CardContent><p className="text-3xl font-bold text-muted-foreground">{done}</p></CardContent>
         </Card>
       </div>
 
@@ -63,9 +52,7 @@ export default async function DashboardPage() {
         </Card>
       ) : (
         <div>
-          <h2 className="mb-3 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            Recent auctions
-          </h2>
+          <h2 className="mb-3 text-sm font-semibold text-muted-foreground uppercase tracking-wide">Recent auctions</h2>
           <div className="space-y-2">
             {auctions.slice(0, 5).map((a) => (
               <Link key={a.id} href={`/auctions/${a.id}`}>

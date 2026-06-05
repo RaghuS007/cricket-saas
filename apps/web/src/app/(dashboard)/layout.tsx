@@ -1,12 +1,14 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getServerToken } from '@/lib/auth-server'
+import { apiGet } from '@/lib/api'
+import { LogoutButton } from '@/components/logout-button'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const token = await getServerToken()
+  if (!token) redirect('/login')
 
-  // Belt-and-suspenders guard; middleware already handles the redirect.
+  const user = await apiGet('/auth/me', token).catch(() => null)
   if (!user) redirect('/login')
 
   return (
@@ -19,7 +21,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <Link href="/auctions" className="hover:text-foreground">Auctions</Link>
           </nav>
         </div>
-        <span className="text-sm text-muted-foreground">{user.email}</span>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-muted-foreground">{user.email}</span>
+          <LogoutButton />
+        </div>
       </header>
       <main className="flex-1 p-6">{children}</main>
     </div>

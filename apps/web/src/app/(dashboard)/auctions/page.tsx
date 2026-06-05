@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { getServerToken } from '@/lib/auth-server'
 import { apiGet } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Auction } from '@/lib/types'
@@ -12,11 +12,8 @@ const STATUS_BADGE: Record<string, string> = {
 }
 
 export default async function AuctionsPage() {
-  const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  const auctions: Auction[] = session
-    ? await apiGet('/auctions', session.access_token).catch(() => [])
-    : []
+  const token = await getServerToken()
+  const auctions: Auction[] = token ? await apiGet('/auctions', token).catch(() => []) : []
 
   return (
     <div className="space-y-6">
@@ -50,9 +47,7 @@ export default async function AuctionsPage() {
                 <CardHeader>
                   <div className="flex items-start justify-between gap-2">
                     <CardTitle className="text-base">{a.name}</CardTitle>
-                    <span
-                      className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[a.status] ?? ''}`}
-                    >
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[a.status] ?? ''}`}>
                       {a.status}
                     </span>
                   </div>
@@ -60,9 +55,7 @@ export default async function AuctionsPage() {
                 <CardContent className="text-sm text-muted-foreground space-y-1">
                   <p>{a.format.replace('_', ' ')}</p>
                   <p>Purse: ₹{Number(a.purseSizePerTeam).toLocaleString()}</p>
-                  <p>
-                    {a._count?.auctionTeams ?? 0} teams · {a._count?.auctionLots ?? 0} players
-                  </p>
+                  <p>{a._count?.auctionTeams ?? 0} teams · {a._count?.auctionLots ?? 0} players</p>
                 </CardContent>
               </Card>
             </Link>
