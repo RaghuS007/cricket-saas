@@ -9,6 +9,7 @@ import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { PlayersModule } from './players/players.module';
 import { AuctionModule } from './auction/auction.module';
 import { OrganizationModule } from './organization/organization.module';
+import { TeamsModule } from './teams/teams.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { OrganizationModule } from './organization/organization.module';
     PlayersModule,
     AuctionModule,
     OrganizationModule,
+    TeamsModule,
   ],
   controllers: [AppController],
   providers: [

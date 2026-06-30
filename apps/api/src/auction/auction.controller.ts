@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -72,6 +73,15 @@ export class AuctionController {
     return this.auctionService.addTeam(id, dto.teamId, user.id);
   }
 
+  @Delete(':id/teams/:teamId')
+  removeTeam(
+    @Param('id') id: string,
+    @Param('teamId') teamId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.auctionService.removeTeam(id, teamId, user.id);
+  }
+
   // ── Lots ──────────────────────────────────────────────────────────────────
 
   @Post(':id/lots')
@@ -132,6 +142,15 @@ export class AuctionController {
     const lot = await this.auctionService.unsoldLot(id, lotId, user.id);
     this.gateway.broadcastLotUnsold(id, lotId);
     return lot;
+  }
+
+  @Delete(':id/lots/:lotId')
+  removeLot(
+    @Param('id') id: string,
+    @Param('lotId') lotId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.auctionService.removeLot(id, lotId, user.id);
   }
 
   @Get(':id/lots/:lotId/bids')

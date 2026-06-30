@@ -1,5 +1,13 @@
 // ── Shared frontend types ────────────────────────────────────────────────────
 
+export interface Team {
+  id: string
+  name: string
+  shortName: string
+  primaryColor: string | null
+  organizationId: string | null
+}
+
 export type MatchFormat = 'T20' | 'T10' | 'TENNIS_BALL'
 export type AuctionStatus = 'DRAFT' | 'LIVE' | 'PAUSED' | 'COMPLETED'
 export type AuctionLotStatus = 'PENDING' | 'IN_PROGRESS' | 'SOLD' | 'UNSOLD'

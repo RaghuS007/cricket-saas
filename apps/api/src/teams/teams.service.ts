@@ -1,9 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { CreatePlayerDto } from './dto/create-player.dto';
 
 @Injectable()
-export class PlayersService {
+export class TeamsService {
   constructor(private prisma: PrismaService) {}
 
   async findAll(userId: string) {
@@ -12,18 +11,14 @@ export class PlayersService {
       select: { organizationId: true },
     });
 
-    return this.prisma.player.findMany({
+    return this.prisma.team.findMany({
       where: {
         OR: [
           { organizationId: null },
           ...(profile?.organizationId ? [{ organizationId: profile.organizationId }] : []),
         ],
       },
-      orderBy: [{ role: 'asc' }, { name: 'asc' }],
+      orderBy: { name: 'asc' },
     });
-  }
-
-  create(data: CreatePlayerDto) {
-    return this.prisma.player.create({ data });
   }
 }

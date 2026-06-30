@@ -49,7 +49,7 @@ export class AuctionGateway
       const token: string | undefined = (socket.handshake.auth as Record<string, string>)?.token;
       if (!token) return next(new Error('UNAUTHORIZED'));
       try {
-        const payload = verify(token, process.env.SUPABASE_JWT_SECRET!) as {
+        const payload = verify(token, process.env.JWT_SECRET!) as {
           sub: string;
           email: string;
         };

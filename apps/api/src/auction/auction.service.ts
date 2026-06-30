@@ -120,6 +120,17 @@ export class AuctionService {
     });
   }
 
+  async removeTeam(auctionId: string, auctionTeamId: string, userId: string) {
+    const orgId = await this.getOrgId(userId);
+    const auction = await this.assertAuction(auctionId, orgId);
+    if (auction.status !== AuctionStatus.DRAFT)
+      throw new BadRequestException('Teams can only be removed from DRAFT auctions');
+
+    return this.prisma.auctionTeam.delete({
+      where: { id: auctionTeamId, auctionId },
+    });
+  }
+
   // ── Lots ────────────────────────────────────────────────────────────────
 
   async addLots(auctionId: string, dto: AddLotsDto, userId: string) {
@@ -160,6 +171,18 @@ export class AuctionService {
       },
       orderBy: { lotNumber: 'asc' },
     });
+  }
+
+  async removeLot(auctionId: string, lotId: string, userId: string) {
+    const orgId = await this.getOrgId(userId);
+    const auction = await this.assertAuction(auctionId, orgId);
+    if (auction.status !== AuctionStatus.DRAFT)
+      throw new BadRequestException('Lots can only be removed from DRAFT auctions');
+
+    const lot = await this.prisma.auctionLot.findFirst({ where: { id: lotId, auctionId } });
+    if (!lot) throw new NotFoundException(`Lot ${lotId} not found`);
+
+    return this.prisma.auctionLot.delete({ where: { id: lotId } });
   }
 
   // ── State machine ────────────────────────────────────────────────────────
