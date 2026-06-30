@@ -212,6 +212,10 @@ export function AuctionSetup({ initial, initialLots, allTeams, allPlayers, acces
                         onChange={() => togglePlayer(p.id)}
                         className="h-3.5 w-3.5 accent-primary"
                       />
+                      {p.avatarUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={p.avatarUrl} alt={p.name} className="h-7 w-7 rounded-full object-cover shrink-0" />
+                      )}
                       <span className="flex-1 text-sm">{p.name}</span>
                       <span className="text-xs text-muted-foreground">{ROLE_LABEL[p.role] ?? p.role}</span>
                       <span className="text-xs text-muted-foreground tabular-nums">

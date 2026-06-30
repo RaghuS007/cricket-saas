@@ -8,7 +8,7 @@ IPL-style fantasy auction platform with real-time live bidding and ball-by-ball 
 |---|---|
 | Monorepo | Turborepo + pnpm workspaces |
 | API | NestJS 11, Prisma 6, PostgreSQL, Socket.IO |
-| Auth | Supabase Auth (email + OAuth), JWT via `passport-jwt` |
+| Auth | Custom JWT (bcrypt + jsonwebtoken), cookie-based on frontend |
 | Frontend | Next.js 16 App Router, Tailwind v4, shadcn/ui (base-nova) |
 | Infra (dev) | Docker Compose (Postgres 16, Redis 7) |
 
@@ -19,7 +19,7 @@ apps/
   api/          NestJS backend (port 3000)
   web/          Next.js frontend (port 3001)
 packages/
-  prisma/       Shared Prisma schema, migrations, seed
+  prisma/       Shared Prisma schema, seed
 ```
 
 ## Getting started
@@ -27,7 +27,7 @@ packages/
 ### 1. Prerequisites
 
 - Node.js ≥ 20, pnpm v11
-- Docker Desktop (for local Postgres + Redis)
+- Docker Desktop with WSL integration enabled (for local Postgres + Redis)
 
 ### 2. Install dependencies
 
@@ -48,35 +48,32 @@ cp apps/api/.env.example  apps/api/.env
 cp apps/web/.env.example  apps/web/.env.local
 ```
 
-Fill in the values (get them from **Supabase Dashboard → Settings → API**):
-
-| File | Key | Where to find it |
+| File | Key | Description |
 |---|---|---|
-| `apps/api/.env` | `SUPABASE_JWT_SECRET` | Settings → API → JWT Secret |
-| `apps/web/.env.local` | `NEXT_PUBLIC_SUPABASE_URL` | Settings → API → Project URL |
-| `apps/web/.env.local` | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Settings → API → anon key |
+| `apps/api/.env` | `DATABASE_URL` | Postgres connection string |
+| `apps/api/.env` | `JWT_SECRET` | Secret used to sign access tokens (generate with `node -e "console.log(require('crypto').randomBytes(64).toString('base64url'))"`) |
+| `apps/api/.env` | `FRONTEND_URL` | CORS origin, defaults to `http://localhost:3001` |
+| `apps/web/.env.local` | `NEXT_PUBLIC_API_URL` | NestJS API base URL, defaults to `http://localhost:3000` |
 
-Also configure in **Supabase Dashboard → Auth → URL Configuration**:
-- Site URL: `http://localhost:3001`
-- Redirect URLs: `http://localhost:3001/auth/callback`
-
-### 5. Run database migrations + seed
+### 5. Push schema + seed
 
 ```bash
-# Apply schema migrations
-cd packages/prisma && npx prisma migrate deploy
+cd packages/prisma
 
-# Seed 8 IPL teams + 24 players (global reference data)
-npx prisma db seed
+# Sync schema to database
+npx prisma db push
+
+# Seed 8 IPL teams + 24 players (with avatar URLs)
+node_modules/.bin/tsx prisma/seed.ts
 ```
 
 ### 6. Start the apps
 
 ```bash
-# Terminal 1 — API
-pnpm --filter api dev
+# Terminal 1 — API (port 3000)
+pnpm --filter api start:dev
 
-# Terminal 2 — Web
+# Terminal 2 — Web (port 3001)
 pnpm --filter web dev
 ```
 
@@ -84,53 +81,61 @@ Open [http://localhost:3001](http://localhost:3001).
 
 ## First-run flow
 
-1. Register with email → confirm the link Supabase sends
-2. Redirected to `/onboarding` → create your league (org)
-3. `/dashboard` shows auction counts and a link to create your first auction
-4. **New Auction** → set format, purse size, squad limits
-5. Add teams (8 IPL teams are pre-seeded) and players (24 pre-seeded)
-6. **Start Auction** → use "Next Player →" to put players on the block
-7. Teams bid in real time via WebSocket — the bid feed updates live for all connected browsers
-8. "Sell ✓" or "Unsold" to conclude each lot
+1. **Register** at `/register` with email + password
+2. **Onboarding** at `/onboarding` — create your league (organization)
+3. **Dashboard** shows live / draft / completed auction counts
+4. **New Auction** → name, format (T20 / T10 / Tennis Ball), purse per team, squad limits
+5. **Auction Setup** (DRAFT state):
+   - Add up to 8 pre-seeded IPL teams from the dropdown
+   - Select players from the scrollable list (avatars, role badges, base prices shown)
+   - Remove teams or players before starting
+6. **Start Auction** → room goes LIVE
+7. **Next Player →** puts the next lot on the block; player photo + role displayed
+8. Teams bid in real time via WebSocket — the bid counter animates up, a cash-stack meter rises, and `+₹` particles fly on each bid
+9. **Sell ✓** (sold to highest bidder) or **Unsold** to conclude each lot; team purse bars update live
 
-## API overview
+## API reference
 
-All endpoints require `Authorization: Bearer <supabase_access_token>` except `GET /` and `GET /health`.
+All endpoints require `Authorization: Bearer <access_token>` except `POST /auth/register`, `POST /auth/login`, `GET /`, and `GET /health`.
 
 ```
 # Auth
-POST   /auth/sync-profile          Create/update UserProfile from JWT
+POST   /auth/register              Register (email, password, displayName)
+POST   /auth/login                 Login → { accessToken }
+GET    /auth/me                    Current user identity
 
 # Organizations
-POST   /organizations               Create org + become OWNER
-GET    /organizations/me            Get current user's org
+POST   /organizations              Create org + become OWNER
+GET    /organizations/me           Current user's org
+
+# Teams
+GET    /teams                      List global IPL teams + org-specific teams
 
 # Players
-GET    /players                     List players (org-scoped + global)
-POST   /players                     Create player
-GET    /players/:id
-PATCH  /players/:id
-DELETE /players/:id
+GET    /players                    List global + org players (with avatarUrl)
+POST   /players                    Create custom player
 
-# Auctions (all org-scoped)
-POST   /auctions                    Create auction (DRAFT)
-GET    /auctions                    List org's auctions
-GET    /auctions/:id                Full auction detail (teams, current lot, bids)
-POST   /auctions/:id/start          DRAFT → LIVE
-POST   /auctions/:id/pause          LIVE → PAUSED
-POST   /auctions/:id/resume         PAUSED → LIVE
-POST   /auctions/:id/teams          Register a team
-POST   /auctions/:id/lots           Bulk-add players as lots
-GET    /auctions/:id/lots           List all lots with status
-POST   /auctions/:id/lots/next      Start next PENDING lot (IN_PROGRESS)
-POST   /auctions/:id/lots/:id/sell  Mark lot SOLD + deduct purse
-POST   /auctions/:id/lots/:id/unsold Mark lot UNSOLD
-GET    /auctions/:id/lots/:id/bids  Bid history for a lot
+# Auctions (all org-scoped via JWT)
+POST   /auctions                   Create auction (DRAFT)
+GET    /auctions                   List org's auctions
+GET    /auctions/:id               Full detail (teams, current lot, lot counts)
+POST   /auctions/:id/start         DRAFT → LIVE  (needs ≥2 teams, ≥1 lot)
+POST   /auctions/:id/pause         LIVE → PAUSED
+POST   /auctions/:id/resume        PAUSED → LIVE
+POST   /auctions/:id/teams         Add a team to a DRAFT auction
+DELETE /auctions/:id/teams/:tid    Remove a team from a DRAFT auction
+POST   /auctions/:id/lots          Bulk-add players as lots to a DRAFT auction
+GET    /auctions/:id/lots          List lots with status, player, sold-to team
+DELETE /auctions/:id/lots/:lid     Remove a lot from a DRAFT auction
+POST   /auctions/:id/lots/next     Start next PENDING lot → IN_PROGRESS
+POST   /auctions/:id/lots/:lid/sell   Mark SOLD + deduct purse + update squad counts
+POST   /auctions/:id/lots/:lid/unsold Mark UNSOLD
+GET    /auctions/:id/lots/:lid/bids   Bid history for a lot
 ```
 
 ## WebSocket (Socket.IO)
 
-Namespace: `/auction` — connect with `{ auth: { token: '<access_token>' } }`.
+Namespace: `/auction` — authenticate via `{ auth: { token: '<access_token>' } }` in the handshake.
 
 | Direction | Event | Payload |
 |---|---|---|
@@ -140,28 +145,35 @@ Namespace: `/auction` — connect with `{ auth: { token: '<access_token>' } }`.
 | Server → Room | `auction:status` | `{ auctionId, status }` |
 | Server → Room | `auction:lot-started` | `{ auctionId, lot: { id, lotNumber, player } }` |
 | Server → Room | `auction:bid` | `{ auctionId, lotId, amount, teamName, highestBid }` |
-| Server → Room | `auction:lot-sold` | `{ auctionId, lotId, soldPrice, teamName }` |
+| Server → Room | `auction:lot-sold` | `{ auctionId, lotId, soldPrice, auctionTeamId, teamName }` |
 | Server → Room | `auction:lot-unsold` | `{ auctionId, lotId }` |
 
 ## Multi-tenancy
 
-Every resource is scoped to an `Organization`. Global reference data (IPL teams, players) has `organizationId = null` and is visible to all orgs. Auction resources require a non-null `organizationId`.
+Every resource is scoped to an `Organization`. Global reference data (IPL teams + players) has `organizationId = null` and is visible to all orgs. A user must belong to an org (via `/onboarding`) before creating auctions or accessing player lots.
+
+## Player avatars
+
+Players have an `avatarUrl` field. The seed populates it with colour-coded initials via `ui-avatars.com` (blue = BAT, green = BOWL, purple = AR, amber = WK). To use real photos, update the field directly in Prisma Studio or via a `PATCH /players/:id` call with a hosted image URL (Cloudinary, S3, etc.).
 
 ## Development commands
 
 ```bash
-# Type-check both apps
-npx tsc --noEmit                    # from apps/api or apps/web
+# Type-check API
+/home/raghu/projects/cricket-saas/apps/api/node_modules/.bin/tsc --noEmit -p apps/api/tsconfig.json
 
-# Run API unit tests
-pnpm --filter api test
+# Type-check web
+/home/raghu/projects/cricket-saas/apps/web/node_modules/.bin/tsc --noEmit -p apps/web/tsconfig.json
 
-# Prisma Studio (DB browser)
+# Prisma Studio (visual DB browser)
 cd packages/prisma && npx prisma studio
 
 # Regenerate Prisma client after schema change
 cd packages/prisma && npx prisma generate
 
-# Create a new migration
-cd packages/prisma && npx prisma migrate dev --name <migration-name>
+# Re-seed (idempotent — safe to run multiple times)
+cd packages/prisma && node_modules/.bin/tsx prisma/seed.ts
+
+# Run API unit tests
+pnpm --filter api test
 ```

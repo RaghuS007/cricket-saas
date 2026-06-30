@@ -31,5 +31,9 @@ export class CreatePlayerDto {
 
   @IsOptional()
   @IsString()
+  avatarUrl?: string;
+
+  @IsOptional()
+  @IsString()
   organizationId?: string;
 }
