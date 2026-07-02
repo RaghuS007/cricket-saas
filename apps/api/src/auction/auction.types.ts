@@ -17,6 +17,7 @@ export interface AuctionLotStartedPayload {
       country: string | null;
       basePrice: string;
       isOverseas: boolean;
+      avatarUrl: string | null;
     };
   };
 }

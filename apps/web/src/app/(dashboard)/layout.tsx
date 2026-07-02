@@ -1,8 +1,10 @@
-import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getServerToken } from '@/lib/auth-server'
 import { apiGet } from '@/lib/api'
 import { LogoutButton } from '@/components/logout-button'
+import { Logo } from '@/components/logo'
+import { NavLinks } from '@/components/nav-links'
+import { UserChip } from '@/components/user-chip'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const token = await getServerToken()
@@ -13,16 +15,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="border-b bg-background px-6 py-3 flex items-center justify-between">
+      <header className="sticky top-0 z-10 border-b bg-background/80 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/60 flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <span className="font-semibold tracking-tight">Cricket SaaS</span>
-          <nav className="flex gap-4 text-sm text-muted-foreground">
-            <Link href="/dashboard" className="hover:text-foreground">Dashboard</Link>
-            <Link href="/auctions" className="hover:text-foreground">Auctions</Link>
-          </nav>
+          <Logo />
+          <NavLinks />
         </div>
         <div className="flex items-center gap-4">
-          <span className="text-sm text-muted-foreground">{user.email}</span>
+          <UserChip email={user.email} />
           <LogoutButton />
         </div>
       </header>

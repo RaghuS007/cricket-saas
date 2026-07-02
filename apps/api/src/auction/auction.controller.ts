@@ -111,6 +111,7 @@ export class AuctionController {
         country: lot.player.country,
         basePrice: lot.player.basePrice.toString(),
         isOverseas: lot.player.isOverseas,
+        avatarUrl: lot.player.avatarUrl,
       },
     });
     return lot;

@@ -30,7 +30,7 @@ export interface AuctionTeam {
   remainingPurse: string
   playersAcquired: number
   overseasAcquired: number
-  team: { id: string; name: string; shortName: string }
+  team: { id: string; name: string; shortName: string; primaryColor: string | null }
 }
 
 export interface Player {

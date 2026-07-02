@@ -7,6 +7,7 @@ import { getAuctionSocket, AUCTION_EVENTS, disconnectAuctionSocket } from '@/lib
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import type {
   AuctionDetail,
   AuctionStatus,
@@ -34,12 +35,23 @@ interface CashParticle {
   delta: string
 }
 
-const STATUS_COLOR: Record<AuctionStatus, string> = {
-  DRAFT: 'text-muted-foreground',
-  LIVE: 'text-green-600 dark:text-green-400',
-  PAUSED: 'text-yellow-600 dark:text-yellow-500',
-  COMPLETED: 'text-muted-foreground',
+interface ConfettiPiece {
+  id: string
+  x: number
+  dx: number
+  dy: number
+  rot: number
+  color: string
 }
+
+const STATUS_VARIANT: Record<AuctionStatus, 'live' | 'neutral' | 'warning' | 'muted'> = {
+  DRAFT: 'neutral',
+  LIVE: 'live',
+  PAUSED: 'warning',
+  COMPLETED: 'muted',
+}
+
+const CONFETTI_COLORS = ['var(--primary)', 'var(--gold)', '#38bdf8', '#f472b6']
 
 const ROLE_FULL: Record<string, string> = {
   BAT: 'Batsman',
@@ -86,6 +98,7 @@ export function AuctionRoom({ initial, accessToken }: Props) {
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [particles, setParticles] = useState<CashParticle[]>([])
+  const [confetti, setConfetti] = useState<ConfettiPiece[]>([])
   const feedRef = useRef<HTMLDivElement>(null)
 
   const highestBid = bidFeed.findLast(
@@ -113,10 +126,29 @@ export function AuctionRoom({ initial, accessToken }: Props) {
     }, 1200)
   }, [])
 
+  // Spawn a confetti burst on SOLD
+  const spawnConfetti = useCallback(() => {
+    const batch: ConfettiPiece[] = Array.from({ length: 24 }, () => ({
+      id: crypto.randomUUID(),
+      x: 20 + Math.random() * 60,
+      dx: (Math.random() - 0.5) * 220,
+      dy: -(60 + Math.random() * 140),
+      rot: (Math.random() - 0.5) * 540,
+      color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+    }))
+    setConfetti(batch)
+    setTimeout(() => setConfetti([]), 950)
+  }, [])
+
   // Socket.IO setup
   useEffect(() => {
     const socket = getAuctionSocket(accessToken)
     socket.emit(AUCTION_EVENTS.JOIN, { auctionId: initial.id })
+
+    socket.on('exception', (err: { message?: string | string[] }) => {
+      const message = Array.isArray(err?.message) ? err.message[0] : err?.message
+      setError(message ?? 'Bid rejected')
+    })
 
     socket.on(AUCTION_EVENTS.STATUS, ({ status }: { status: AuctionStatus }) => {
       setAuction((a) => ({ ...a, status }))
@@ -132,6 +164,7 @@ export function AuctionRoom({ initial, accessToken }: Props) {
     })
 
     socket.on(AUCTION_EVENTS.BID_PLACED, (payload: BidPayload) => {
+      setError(null)
       setBidFeed((f) => {
         const prev = f.findLast((b) => !b.teamName.startsWith('✓') && !b.teamName.startsWith('—'))
         const prevAmt = prev ? Number(prev.amount) : 0
@@ -145,6 +178,7 @@ export function AuctionRoom({ initial, accessToken }: Props) {
     })
 
     socket.on(AUCTION_EVENTS.LOT_SOLD, (payload: LotSoldPayload) => {
+      spawnConfetti()
       setAuction((a) => ({
         ...a,
         currentLot: null,
@@ -170,13 +204,14 @@ export function AuctionRoom({ initial, accessToken }: Props) {
 
     return () => {
       socket.emit(AUCTION_EVENTS.LEAVE, { auctionId: initial.id })
+      socket.off('exception')
       socket.off(AUCTION_EVENTS.STATUS)
       socket.off(AUCTION_EVENTS.LOT_STARTED)
       socket.off(AUCTION_EVENTS.BID_PLACED)
       socket.off(AUCTION_EVENTS.LOT_SOLD)
       socket.off(AUCTION_EVENTS.LOT_UNSOLD)
     }
-  }, [initial.id, accessToken, spawnParticles])
+  }, [initial.id, accessToken, spawnParticles, spawnConfetti])
 
   const apiAction = useCallback(
     async (path: string, body?: unknown) => {
@@ -217,7 +252,9 @@ export function AuctionRoom({ initial, accessToken }: Props) {
             ← Auctions
           </Link>
           <h1 className="mt-1 text-2xl font-bold tracking-tight">{auction.name}</h1>
-          <p className={`text-sm font-medium ${STATUS_COLOR[auction.status]}`}>{auction.status}</p>
+          <Badge variant={STATUS_VARIANT[auction.status]} dot={auction.status === 'LIVE'} className="mt-1.5">
+            {auction.status}
+          </Badge>
         </div>
 
         {/* Conductor controls */}
@@ -310,12 +347,27 @@ export function AuctionRoom({ initial, accessToken }: Props) {
                   </div>
 
                   {/* ── Bid display with cash animation ─────────── */}
-                  <div className="relative rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 p-4 overflow-hidden">
+                  <div className="relative rounded-xl bg-gradient-to-br from-gold/15 to-gold/5 border border-gold/30 p-4 overflow-hidden">
+                    {/* Sold confetti burst */}
+                    {confetti.map((c) => (
+                      <span
+                        key={c.id}
+                        className="pointer-events-none absolute top-1/2 h-2 w-2 rounded-sm animate-confetti select-none"
+                        style={{
+                          left: `${c.x}%`,
+                          backgroundColor: c.color,
+                          '--dx': `${c.dx}px`,
+                          '--dy': `${c.dy}px`,
+                          '--rot': `${c.rot}deg`,
+                        } as React.CSSProperties}
+                      />
+                    ))}
+
                     {/* Flying cash particles */}
                     {particles.map((p) => (
                       <span
                         key={p.id}
-                        className="pointer-events-none absolute bottom-4 text-sm font-bold text-green-500 animate-cash-fly select-none"
+                        className="pointer-events-none absolute bottom-4 text-sm font-bold text-gold-foreground dark:text-gold animate-cash-fly select-none"
                         style={{ left: `${p.x}%` }}
                       >
                         {p.delta}
@@ -327,10 +379,10 @@ export function AuctionRoom({ initial, accessToken }: Props) {
                         <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1">
                           Current Bid
                         </p>
-                        <p className="text-4xl font-black tabular-nums text-primary leading-none">
+                        <p className="text-4xl font-black tabular-nums text-gold-foreground dark:text-gold leading-none">
                           ₹{animatedBid.toLocaleString('en-IN')}
                         </p>
-                        <p className="mt-1 text-sm text-muted-foreground">{highestBid.teamName}</p>
+                        <p className="mt-1 text-sm font-medium text-foreground">{highestBid.teamName}</p>
 
                         {/* Cash stack bars */}
                         <div className="mt-3 flex items-end gap-0.5 h-8">
@@ -343,9 +395,7 @@ export function AuctionRoom({ initial, accessToken }: Props) {
                               <div
                                 key={i}
                                 className={`flex-1 rounded-sm transition-all duration-300 ${
-                                  active
-                                    ? 'bg-green-500 dark:bg-green-400'
-                                    : 'bg-muted'
+                                  active ? 'bg-gold' : 'bg-muted'
                                 }`}
                                 style={{ height: active ? `${50 + i * 2.5}%` : '20%' }}
                               />
@@ -442,28 +492,43 @@ export function AuctionRoom({ initial, accessToken }: Props) {
               <CardTitle className="text-base">Teams</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {auction.auctionTeams.map((t: AuctionTeam) => (
-                <div key={t.id} className="space-y-1">
-                  <div className="flex justify-between text-sm font-medium">
-                    <span>{t.team.name}</span>
-                    <span>₹{Number(t.remainingPurse).toLocaleString()}</span>
+              {auction.auctionTeams.map((t: AuctionTeam) => {
+                const isLeading = !!currentLot && highestBid?.teamName === t.team.name
+                return (
+                  <div
+                    key={t.id}
+                    className={`space-y-1 rounded-lg p-2 -m-2 transition-colors ${
+                      isLeading ? 'bg-gold/10 ring-1 ring-gold/40' : ''
+                    }`}
+                  >
+                    <div className="flex justify-between text-sm font-medium">
+                      <span className="flex items-center gap-1.5 truncate">
+                        <span
+                          className="size-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: t.team.primaryColor ?? 'var(--muted-foreground)' }}
+                        />
+                        <span className="truncate">{t.team.name}</span>
+                        {isLeading && <span className="text-xs text-gold-foreground dark:text-gold">👑</span>}
+                      </span>
+                      <span className="tabular-nums shrink-0">₹{Number(t.remainingPurse).toLocaleString()}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all duration-700"
+                        style={{
+                          width: `${Math.max(
+                            0,
+                            (Number(t.remainingPurse) / Number(initial.purseSizePerTeam)) * 100,
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t.playersAcquired} players · {t.overseasAcquired} overseas
+                    </p>
                   </div>
-                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full bg-primary rounded-full transition-all duration-700"
-                      style={{
-                        width: `${Math.max(
-                          0,
-                          (Number(t.remainingPurse) / Number(initial.purseSizePerTeam)) * 100,
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {t.playersAcquired} players · {t.overseasAcquired} overseas
-                  </p>
-                </div>
-              ))}
+                )
+              })}
               {auction.auctionTeams.length === 0 && (
                 <p className="text-sm text-muted-foreground">No teams yet.</p>
               )}
