@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { apiPatch } from '@/lib/api'
+import { apiDelete, apiPatch } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,9 +19,12 @@ interface Props {
   accessToken: string
   onSaved: (updated: Player) => void
   onCancel: () => void
+  // Fired once the player is deleted server-side, so the parent can drop it
+  // from its lists and close this form.
+  onDeleted?: (id: string) => void
 }
 
-export function PlayerEditForm({ player, accessToken, onSaved, onCancel }: Props) {
+export function PlayerEditForm({ player, accessToken, onSaved, onCancel, onDeleted }: Props) {
   const [name, setName] = useState(player.name)
   const [role, setRole] = useState(player.role)
   const [country, setCountry] = useState(player.country ?? '')
@@ -29,6 +32,7 @@ export function PlayerEditForm({ player, accessToken, onSaved, onCancel }: Props
   const [isOverseas, setIsOverseas] = useState(player.isOverseas)
   const [avatarUrl, setAvatarUrl] = useState(player.avatarUrl ?? '')
   const [loading, setLoading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -49,6 +53,20 @@ export function PlayerEditForm({ player, accessToken, onSaved, onCancel }: Props
       setError(err instanceof Error ? err.message : 'Failed to save player')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirm(`Delete "${player.name}"? This cannot be undone.`)) return
+    setError(null)
+    setDeleting(true)
+    try {
+      await apiDelete(`/players/${player.id}`, accessToken)
+      onDeleted?.(player.id)
+    } catch (err) {
+      // Most likely a 409: the player still appears in one or more auction lots.
+      setError(err instanceof Error ? err.message : 'Failed to delete player')
+      setDeleting(false)
     }
   }
 
@@ -103,11 +121,20 @@ export function PlayerEditForm({ player, accessToken, onSaved, onCancel }: Props
         </div>
       </div>
       <div className="flex gap-2">
-        <Button type="submit" size="sm" className="flex-1" disabled={loading || !name || !basePrice}>
+        <Button type="submit" size="sm" className="flex-1" disabled={loading || deleting || !name || !basePrice}>
           {loading ? 'Saving…' : 'Save'}
         </Button>
-        <Button type="button" size="sm" variant="outline" onClick={onCancel} disabled={loading}>
+        <Button type="button" size="sm" variant="outline" onClick={onCancel} disabled={loading || deleting}>
           Cancel
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="destructive"
+          onClick={handleDelete}
+          disabled={loading || deleting}
+        >
+          {deleting ? 'Deleting…' : 'Delete'}
         </Button>
       </div>
     </form>

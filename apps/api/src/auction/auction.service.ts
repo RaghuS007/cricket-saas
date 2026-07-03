@@ -69,7 +69,9 @@ export class AuctionService {
       where: { id, organizationId: orgId },
       include: {
         auctionTeams: {
-          include: { team: { select: { id: true, name: true, shortName: true, primaryColor: true } } },
+          include: {
+            team: { select: { id: true, name: true, shortName: true, primaryColor: true, logoUrl: true } },
+          },
           orderBy: { team: { name: 'asc' } },
         },
       },

@@ -1,4 +1,12 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000'
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000'
+
+// Backend stores asset paths (e.g. team logos) as host-relative URLs like
+// "/uploads/team-logos/xxx.png" — prefix with the API origin to render them
+// from the web app, which runs on a different port.
+export function assetUrl(path: string | null | undefined): string | undefined {
+  if (!path) return undefined
+  return path.startsWith('http') ? path : `${API_URL}${path}`
+}
 
 async function errorMessage(res: Response, path: string): Promise<string> {
   const text = await res.text().catch(() => '')
@@ -49,6 +57,18 @@ export async function apiPatch(path: string, token: string, body?: unknown) {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) throw new Error(await errorMessage(res, path))
+  return res.json()
+}
+
+export async function apiUpload(path: string, token: string, formData: FormData) {
+  // No Content-Type header here — the browser sets multipart/form-data with
+  // the correct boundary automatically when the body is a FormData instance.
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
   })
   if (!res.ok) throw new Error(await errorMessage(res, path))
   return res.json()

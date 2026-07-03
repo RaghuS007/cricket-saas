@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { PlayersService } from './players.service';
 import { CreatePlayerDto } from './dto/create-player.dto';
 import { UpdatePlayerDto } from './dto/update-player.dto';
@@ -22,5 +22,10 @@ export class PlayersController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() body: UpdatePlayerDto, @CurrentUser() user: AuthUser) {
     return this.playersService.update(id, body, user.id);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.playersService.remove(id, user.id);
   }
 }

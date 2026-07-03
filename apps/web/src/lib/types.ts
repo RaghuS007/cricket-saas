@@ -5,6 +5,7 @@ export interface Team {
   name: string
   shortName: string
   primaryColor: string | null
+  logoUrl: string | null
   organizationId: string | null
 }
 
@@ -30,7 +31,7 @@ export interface AuctionTeam {
   remainingPurse: string
   playersAcquired: number
   overseasAcquired: number
-  team: { id: string; name: string; shortName: string; primaryColor: string | null }
+  team: { id: string; name: string; shortName: string; primaryColor: string | null; logoUrl: string | null }
 }
 
 export interface Player {

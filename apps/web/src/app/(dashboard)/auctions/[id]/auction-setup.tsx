@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { apiPost, apiDelete } from '@/lib/api'
+import { apiPost, apiDelete, assetUrl } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -32,6 +32,25 @@ const ROLE_LABEL: Record<string, string> = {
   BOWL: 'BOWL',
   ALL_ROUNDER: 'AR',
   WICKET_KEEPER: 'WK',
+}
+
+function TeamAvatar({ logoUrl, primaryColor }: { logoUrl?: string | null; primaryColor?: string | null }) {
+  if (logoUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={assetUrl(logoUrl)}
+        alt=""
+        className="size-5 shrink-0 rounded-full object-cover ring-1 ring-border"
+      />
+    )
+  }
+  return (
+    <span
+      className="size-2.5 shrink-0 rounded-full"
+      style={{ backgroundColor: primaryColor ?? 'var(--muted-foreground)' }}
+    />
+  )
 }
 
 export function AuctionSetup({ initial, initialLots, allTeams, allPlayers, accessToken }: Props) {
@@ -180,6 +199,14 @@ export function AuctionSetup({ initial, initialLots, allTeams, allPlayers, acces
   }
 
   function handleTeamSaved(updated: Team) {
+    applyTeamUpdate(updated)
+    setEditingTeamId(null)
+  }
+
+  // Logo uploads refresh the team everywhere it's shown but leave the inline
+  // edit form open, since uploading a logo isn't "done editing" the way
+  // submitting the form is.
+  function applyTeamUpdate(updated: Team) {
     setTeams((ts) => ts.map((t) => (t.id === updated.id ? updated : t)))
     setAuction((a) => ({
       ...a,
@@ -187,12 +214,23 @@ export function AuctionSetup({ initial, initialLots, allTeams, allPlayers, acces
         at.teamId === updated.id ? { ...at, team: { ...at.team, ...updated } } : at,
       ),
     }))
-    setEditingTeamId(null)
   }
 
   function handlePlayerSaved(updated: Player) {
     setPlayers((ps) => ps.map((p) => (p.id === updated.id ? updated : p)))
     setLots((ls) => ls.map((l) => (l.player.id === updated.id ? { ...l, player: updated } : l)))
+    setEditingPlayerId(null)
+  }
+
+  // A team/player can only be deleted once the server confirms it's unused by
+  // any auction, so it's always safe to just drop it from local state here.
+  function handleTeamDeleted(id: string) {
+    setTeams((ts) => ts.filter((t) => t.id !== id))
+    setEditingTeamId(null)
+  }
+
+  function handlePlayerDeleted(id: string) {
+    setPlayers((ps) => ps.filter((p) => p.id !== id))
     setEditingPlayerId(null)
   }
 
@@ -328,7 +366,14 @@ export function AuctionSetup({ initial, initialLots, allTeams, allPlayers, acces
                   {availableTeams.map((t) =>
                     editingTeamId === t.id ? (
                       <div key={t.id} className="p-1.5">
-                        <TeamEditForm team={t} accessToken={accessToken} onSaved={handleTeamSaved} onCancel={() => setEditingTeamId(null)} />
+                        <TeamEditForm
+                          team={t}
+                          accessToken={accessToken}
+                          onSaved={handleTeamSaved}
+                          onLogoUpdated={applyTeamUpdate}
+                          onCancel={() => setEditingTeamId(null)}
+                          onDeleted={handleTeamDeleted}
+                        />
                       </div>
                     ) : (
                       <label
@@ -341,10 +386,7 @@ export function AuctionSetup({ initial, initialLots, allTeams, allPlayers, acces
                           onChange={() => toggleTeam(t.id)}
                           className="h-3.5 w-3.5 accent-primary"
                         />
-                        <span
-                          className="size-2.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: t.primaryColor ?? 'var(--muted-foreground)' }}
-                        />
+                        <TeamAvatar logoUrl={t.logoUrl} primaryColor={t.primaryColor} />
                         <span className="flex-1 text-sm">{t.name}</span>
                         <span className="text-xs text-muted-foreground">{t.shortName}</span>
                         {t.organizationId != null && (
@@ -376,14 +418,18 @@ export function AuctionSetup({ initial, initialLots, allTeams, allPlayers, acces
                   const fullTeam = teams.find((t) => t.id === at.teamId)
                   return editingTeamId === at.teamId && fullTeam ? (
                     <li key={at.id} className="py-1.5">
-                      <TeamEditForm team={fullTeam} accessToken={accessToken} onSaved={handleTeamSaved} onCancel={() => setEditingTeamId(null)} />
+                      <TeamEditForm
+                        team={fullTeam}
+                        accessToken={accessToken}
+                        onSaved={handleTeamSaved}
+                        onLogoUpdated={applyTeamUpdate}
+                        onCancel={() => setEditingTeamId(null)}
+                        onDeleted={handleTeamDeleted}
+                      />
                     </li>
                   ) : (
                     <li key={at.id} className="flex items-center gap-2 py-2">
-                      <span
-                        className="size-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: at.team.primaryColor ?? 'var(--muted-foreground)' }}
-                      />
+                      <TeamAvatar logoUrl={at.team.logoUrl} primaryColor={at.team.primaryColor} />
                       <span className="flex-1 text-sm font-medium">{at.team.name}</span>
                       {fullTeam?.organizationId != null && (
                         <button
@@ -511,7 +557,13 @@ export function AuctionSetup({ initial, initialLots, allTeams, allPlayers, acces
                   {availablePlayers.map((p) =>
                     editingPlayerId === p.id ? (
                       <div key={p.id} className="p-1.5">
-                        <PlayerEditForm player={p} accessToken={accessToken} onSaved={handlePlayerSaved} onCancel={() => setEditingPlayerId(null)} />
+                        <PlayerEditForm
+                          player={p}
+                          accessToken={accessToken}
+                          onSaved={handlePlayerSaved}
+                          onCancel={() => setEditingPlayerId(null)}
+                          onDeleted={handlePlayerDeleted}
+                        />
                       </div>
                     ) : (
                       <label
@@ -569,7 +621,13 @@ export function AuctionSetup({ initial, initialLots, allTeams, allPlayers, acces
                 {lots.map((lot) =>
                   editingPlayerId === lot.player.id ? (
                     <div key={lot.id} className="p-1.5">
-                      <PlayerEditForm player={lot.player} accessToken={accessToken} onSaved={handlePlayerSaved} onCancel={() => setEditingPlayerId(null)} />
+                      <PlayerEditForm
+                        player={lot.player}
+                        accessToken={accessToken}
+                        onSaved={handlePlayerSaved}
+                        onCancel={() => setEditingPlayerId(null)}
+                        onDeleted={handlePlayerDeleted}
+                      />
                     </div>
                   ) : (
                     <div key={lot.id} className="flex items-center gap-2 px-3 py-1.5">

@@ -63,6 +63,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
           message: 'Record not found',
         };
       }
+      if (exception.code === 'P2003') {
+        // Foreign key violation. Services should pre-check usage and throw a
+        // more specific ConflictException before reaching this point — this
+        // is a defense-in-depth fallback for any relation we didn't catch.
+        return {
+          statusCode: HttpStatus.CONFLICT,
+          error: 'Conflict',
+          message: 'This record is referenced by other data and cannot be deleted',
+        };
+      }
     }
 
     return {

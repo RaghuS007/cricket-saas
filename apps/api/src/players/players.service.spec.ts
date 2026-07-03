@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PlayersService } from './players.service';
 import { PrismaService } from '../prisma.service';
 
@@ -6,13 +6,19 @@ describe('PlayersService', () => {
   let service: PlayersService;
   let prisma: {
     userProfile: { findUnique: jest.Mock };
-    player: { findMany: jest.Mock; create: jest.Mock; findFirst: jest.Mock; update: jest.Mock };
+    player: { findMany: jest.Mock; create: jest.Mock; findFirst: jest.Mock; update: jest.Mock; delete: jest.Mock };
+    auctionLot: { count: jest.Mock };
+    $transaction: jest.Mock;
   };
 
   beforeEach(() => {
     prisma = {
       userProfile: { findUnique: jest.fn() },
-      player: { findMany: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+      player: { findMany: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn(), delete: jest.fn() },
+      auctionLot: { count: jest.fn() },
+      // The service runs remove() inside $transaction(tx => ...) — running the
+      // callback against the same mock stands in for Prisma's tx client.
+      $transaction: jest.fn((cb) => cb(prisma)),
     };
     service = new PlayersService(prisma as unknown as PrismaService);
   });
@@ -90,6 +96,47 @@ describe('PlayersService', () => {
 
       await expect(service.update('victim-player', { basePrice: 1 }, 'user-1')).rejects.toThrow(NotFoundException);
       expect(prisma.player.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('remove', () => {
+    it('deletes a player that belongs to the caller organization and is unused', async () => {
+      prisma.userProfile.findUnique.mockResolvedValue({ organizationId: 'org-1' });
+      prisma.player.findFirst.mockResolvedValue({ id: 'p-1', organizationId: 'org-1', name: 'Player' });
+      prisma.auctionLot.count.mockResolvedValue(0);
+      prisma.player.delete.mockResolvedValue({ id: 'p-1', name: 'Player' });
+
+      const result = await service.remove('p-1', 'user-1');
+
+      expect(prisma.player.findFirst.mock.calls[0][0].where).toEqual({ id: 'p-1', organizationId: 'org-1' });
+      expect(prisma.auctionLot.count).toHaveBeenCalledWith({ where: { playerId: 'p-1' } });
+      expect(prisma.player.delete).toHaveBeenCalledWith({ where: { id: 'p-1' } });
+      expect(result).toEqual({ id: 'p-1', name: 'Player' });
+    });
+
+    it('rejects deleting a player that still appears in an auction lot (e.g. already sold)', async () => {
+      prisma.userProfile.findUnique.mockResolvedValue({ organizationId: 'org-1' });
+      prisma.player.findFirst.mockResolvedValue({ id: 'p-1', organizationId: 'org-1', name: 'Player' });
+      prisma.auctionLot.count.mockResolvedValue(1);
+
+      await expect(service.remove('p-1', 'user-1')).rejects.toThrow(ConflictException);
+      expect(prisma.player.delete).not.toHaveBeenCalled();
+    });
+
+    it('rejects deleting a global (organizationId: null) reference player', async () => {
+      prisma.userProfile.findUnique.mockResolvedValue({ organizationId: 'org-1' });
+      prisma.player.findFirst.mockResolvedValue(null);
+
+      await expect(service.remove('global-player', 'user-1')).rejects.toThrow(NotFoundException);
+      expect(prisma.player.delete).not.toHaveBeenCalled();
+    });
+
+    it("rejects deleting another organization's player (IDOR)", async () => {
+      prisma.userProfile.findUnique.mockResolvedValue({ organizationId: 'org-1' });
+      prisma.player.findFirst.mockResolvedValue(null);
+
+      await expect(service.remove('victim-player', 'user-1')).rejects.toThrow(NotFoundException);
+      expect(prisma.player.delete).not.toHaveBeenCalled();
     });
   });
 });

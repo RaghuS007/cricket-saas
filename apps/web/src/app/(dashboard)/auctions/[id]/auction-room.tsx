@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { apiPost } from '@/lib/api'
+import { apiPost, assetUrl } from '@/lib/api'
 import { getAuctionSocket, AUCTION_EVENTS, disconnectAuctionSocket } from '@/lib/auction-socket'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -509,10 +509,19 @@ export function AuctionRoom({ initial, accessToken }: Props) {
                   >
                     <div className="flex justify-between text-sm font-medium">
                       <span className="flex items-center gap-1.5 truncate">
-                        <span
-                          className="size-2 shrink-0 rounded-full"
-                          style={{ backgroundColor: t.team.primaryColor ?? 'var(--muted-foreground)' }}
-                        />
+                        {t.team.logoUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={assetUrl(t.team.logoUrl)}
+                            alt=""
+                            className="size-4 shrink-0 rounded-full object-cover ring-1 ring-border"
+                          />
+                        ) : (
+                          <span
+                            className="size-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: t.team.primaryColor ?? 'var(--muted-foreground)' }}
+                          />
+                        )}
                         <span className="truncate">{t.team.name}</span>
                         {isLeading && <span className="text-xs text-gold-foreground dark:text-gold">👑</span>}
                       </span>

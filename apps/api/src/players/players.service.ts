@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { CreatePlayerDto } from './dto/create-player.dto';
 import { UpdatePlayerDto } from './dto/update-player.dto';
@@ -48,5 +53,28 @@ export class PlayersService {
     if (!player) throw new NotFoundException(`Player ${id} not found`);
 
     return this.prisma.player.update({ where: { id }, data });
+  }
+
+  async remove(id: string, userId: string) {
+    const orgId = await this.getOrgId(userId);
+
+    // Count-then-delete inside one transaction so a player can't be added to
+    // a lot between the usage check and the delete (TOCTOU). The AuctionLot
+    // FK is onDelete: Restrict anyway, but that only protects the DB row —
+    // without the pre-check the caller would see an opaque 500 instead of a
+    // clear "still in use" message.
+    return this.prisma.$transaction(async (tx) => {
+      const player = await tx.player.findFirst({ where: { id, organizationId: orgId } });
+      if (!player) throw new NotFoundException(`Player ${id} not found`);
+
+      const usageCount = await tx.auctionLot.count({ where: { playerId: id } });
+      if (usageCount > 0) {
+        throw new ConflictException(
+          `Cannot delete player "${player.name}" — they appear in ${usageCount} auction lot${usageCount === 1 ? '' : 's'}. Remove them from those auctions first.`,
+        );
+      }
+
+      return tx.player.delete({ where: { id } });
+    });
   }
 }

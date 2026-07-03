@@ -131,4 +131,82 @@ describe('Players (e2e)', () => {
         .expect(400);
     });
   });
+
+  describe('DELETE /players/:id', () => {
+    async function createPlayer(user: { accessToken: string }, name: string) {
+      const res = await request(app.getHttpServer())
+        .post('/players')
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .send({ name, role: 'BAT', basePrice: 100 })
+        .expect(201);
+      return res.body as { id: string };
+    }
+
+    it('deletes a player that belongs to the caller organization and is unused', async () => {
+      const user = await registerUserWithOrg(app);
+      const player = await createPlayer(user, `Delete Player ${Date.now()}`);
+
+      await request(app.getHttpServer())
+        .delete(`/players/${player.id}`)
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .expect(200);
+
+      const list = await request(app.getHttpServer())
+        .get('/players')
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .expect(200);
+      expect(list.body.find((p: { id: string }) => p.id === player.id)).toBeUndefined();
+    });
+
+    it('rejects an unauthenticated request', async () => {
+      const user = await registerUserWithOrg(app);
+      const player = await createPlayer(user, `Delete Player ${Date.now() + 1}`);
+
+      await request(app.getHttpServer()).delete(`/players/${player.id}`).expect(401);
+    });
+
+    it('rejects deleting a global (organizationId: null) reference player', async () => {
+      const user = await registerUserWithOrg(app);
+      const fixtures = await ensureGlobalFixtures();
+
+      await request(app.getHttpServer())
+        .delete(`/players/${fixtures.playerIds[0]}`)
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .expect(404);
+    });
+
+    it("rejects deleting another organization's player (IDOR)", async () => {
+      const owner = await registerUserWithOrg(app);
+      const attacker = await registerUserWithOrg(app);
+      const player = await createPlayer(owner, `Delete Player ${Date.now() + 2}`);
+
+      await request(app.getHttpServer())
+        .delete(`/players/${player.id}`)
+        .set('Authorization', `Bearer ${attacker.accessToken}`)
+        .expect(404);
+    });
+
+    it('rejects deleting a player that still appears in an auction lot', async () => {
+      const user = await registerUserWithOrg(app);
+      const player = await createPlayer(user, `Delete Player ${Date.now() + 3}`);
+
+      const auctionRes = await request(app.getHttpServer())
+        .post('/auctions')
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .send({ name: 'Delete-guard Auction', format: 'T20', purseSizePerTeam: 1_000_000, maxSquadSize: 15, maxOverseasPerSquad: 4 })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/auctions/${auctionRes.body.id}/lots`)
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .send({ playerIds: [player.id] })
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .delete(`/players/${player.id}`)
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .expect(409);
+      expect(res.body.message).toMatch(/1 auction lot/);
+    });
+  });
 });

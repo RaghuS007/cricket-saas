@@ -1,7 +1,15 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { unlink } from 'fs/promises';
+import { basename, join } from 'path';
 import { PrismaService } from '../prisma.service';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { UpdateTeamDto } from './dto/update-team.dto';
+import { TEAM_LOGO_DIR } from './team-logo.storage';
 
 @Injectable()
 export class TeamsService {
@@ -48,5 +56,47 @@ export class TeamsService {
     if (!team) throw new NotFoundException(`Team ${id} not found`);
 
     return this.prisma.team.update({ where: { id }, data });
+  }
+
+  async updateLogo(id: string, logoUrl: string, userId: string) {
+    const orgId = await this.getOrgId(userId);
+    const team = await this.prisma.team.findFirst({ where: { id, organizationId: orgId } });
+    if (!team) throw new NotFoundException(`Team ${id} not found`);
+
+    if (team.logoUrl) {
+      // Best-effort cleanup of the previous file; a missing file is not an error.
+      await unlink(join(TEAM_LOGO_DIR, basename(team.logoUrl))).catch(() => undefined);
+    }
+
+    return this.prisma.team.update({ where: { id }, data: { logoUrl } });
+  }
+
+  async remove(id: string, userId: string) {
+    const orgId = await this.getOrgId(userId);
+
+    // Count-then-delete inside one transaction so a team can't be added to an
+    // auction between the usage check and the delete (TOCTOU). The AuctionTeam
+    // FK is onDelete: Restrict anyway, but that only protects the DB row —
+    // without the pre-check the caller would see an opaque 500 instead of a
+    // clear "still in use" message.
+    const team = await this.prisma.$transaction(async (tx) => {
+      const team = await tx.team.findFirst({ where: { id, organizationId: orgId } });
+      if (!team) throw new NotFoundException(`Team ${id} not found`);
+
+      const usageCount = await tx.auctionTeam.count({ where: { teamId: id } });
+      if (usageCount > 0) {
+        throw new ConflictException(
+          `Cannot delete team "${team.name}" — it is used in ${usageCount} auction${usageCount === 1 ? '' : 's'}. Remove it from those auctions first.`,
+        );
+      }
+
+      return tx.team.delete({ where: { id } });
+    });
+
+    if (team.logoUrl) {
+      await unlink(join(TEAM_LOGO_DIR, basename(team.logoUrl))).catch(() => undefined);
+    }
+
+    return team;
   }
 }
