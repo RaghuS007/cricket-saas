@@ -8,6 +8,7 @@ import { AuctionStatus, AuctionLotStatus, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma.service';
 import { CreateAuctionDto } from './dto/create-auction.dto';
+import { UpdateAuctionDto } from './dto/update-auction.dto';
 import { AddLotsDto } from './dto/add-lots.dto';
 import { SellLotDto } from './dto/sell-lot.dto';
 
@@ -70,7 +71,7 @@ export class AuctionService {
       include: {
         auctionTeams: {
           include: {
-            team: { select: { id: true, name: true, shortName: true, primaryColor: true, logoUrl: true } },
+            team: { select: { id: true, name: true, shortName: true, primaryColor: true, logoUrl: true, ownerName: true, coOwnerName: true } },
           },
           orderBy: { team: { name: 'asc' } },
         },
@@ -96,7 +97,72 @@ export class AuctionService {
       _count: true,
     });
 
-    return { ...auction, currentLot, lotCounts };
+    const auctionLots = await this.prisma.auctionLot.findMany({
+      where: { auctionId: id },
+      include: {
+        player: true,
+        soldToTeam: { include: { team: { select: { name: true } } } },
+      },
+      orderBy: { lotNumber: 'asc' },
+    });
+
+    return { ...auction, currentLot, lotCounts, auctionLots };
+  }
+
+  async remove(id: string, userId: string) {
+    const orgId = await this.getOrgId(userId);
+    const auction = await this.assertAuction(id, orgId);
+    if (auction.status === AuctionStatus.LIVE) {
+      throw new BadRequestException('Live auctions must be paused before deletion');
+    }
+
+    return this.prisma.auction.delete({ where: { id } });
+  }
+
+  async update(id: string, dto: UpdateAuctionDto, userId: string) {
+    const orgId = await this.getOrgId(userId);
+    const auction = await this.assertAuction(id, orgId);
+
+    if (dto.purseSizePerTeam !== undefined && auction.status !== AuctionStatus.DRAFT) {
+      throw new BadRequestException('Purse can only be changed while the auction is DRAFT');
+    }
+
+    if (dto.maxSquadSize !== undefined || dto.maxOverseasPerSquad !== undefined) {
+      const maxCounts = await this.prisma.auctionTeam.aggregate({
+        where: { auctionId: id },
+        _max: { playersAcquired: true, overseasAcquired: true },
+      });
+      const playersAcquired = maxCounts._max.playersAcquired ?? 0;
+      const overseasAcquired = maxCounts._max.overseasAcquired ?? 0;
+      if (dto.maxSquadSize !== undefined && dto.maxSquadSize < playersAcquired) {
+        throw new BadRequestException(`Max squad size cannot be below current acquired players (${playersAcquired})`);
+      }
+      if (dto.maxOverseasPerSquad !== undefined && dto.maxOverseasPerSquad < overseasAcquired) {
+        throw new BadRequestException(`Max overseas cannot be below current overseas players (${overseasAcquired})`);
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.auction.update({
+        where: { id },
+        data: {
+          name: dto.name,
+          format: dto.format,
+          purseSizePerTeam: dto.purseSizePerTeam !== undefined ? new Decimal(dto.purseSizePerTeam) : undefined,
+          maxSquadSize: dto.maxSquadSize,
+          maxOverseasPerSquad: dto.maxOverseasPerSquad,
+        },
+      });
+
+      if (dto.purseSizePerTeam !== undefined) {
+        await tx.auctionTeam.updateMany({
+          where: { auctionId: id },
+          data: { remainingPurse: new Decimal(dto.purseSizePerTeam) },
+        });
+      }
+
+      return updated;
+    });
   }
 
   // ── Teams ────────────────────────────────────────────────────────────────

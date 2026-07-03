@@ -15,4 +15,14 @@ export class CreateTeamDto {
   @IsString()
   @Matches(/^#[0-9A-Fa-f]{6}$/, { message: 'primaryColor must be a hex color like #16a34a' })
   primaryColor?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  ownerName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  coOwnerName?: string;
 }

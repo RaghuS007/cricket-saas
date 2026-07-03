@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { apiPost, assetUrl } from '@/lib/api'
+import { apiPatch, apiPost, assetUrl } from '@/lib/api'
 import { getAuctionSocket, AUCTION_EVENTS, disconnectAuctionSocket } from '@/lib/auction-socket'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { AuctionInsights } from './auction-insights'
 import type {
   AuctionDetail,
   AuctionStatus,
@@ -45,6 +47,13 @@ interface ConfettiPiece {
   color: string
 }
 
+interface SoldBanner {
+  id: string
+  playerName: string
+  teamName: string
+  soldPrice: string
+}
+
 const STATUS_VARIANT: Record<AuctionStatus, 'live' | 'neutral' | 'warning' | 'muted'> = {
   DRAFT: 'neutral',
   LIVE: 'live',
@@ -53,6 +62,12 @@ const STATUS_VARIANT: Record<AuctionStatus, 'live' | 'neutral' | 'warning' | 'mu
 }
 
 const CONFETTI_COLORS = ['var(--primary)', 'var(--gold)', '#38bdf8', '#f472b6']
+
+const FORMATS = [
+  { value: 'T20', label: 'T20' },
+  { value: 'T10', label: 'T10' },
+  { value: 'TENNIS_BALL', label: 'Tennis Ball' },
+]
 
 const ROLE_FULL: Record<string, string> = {
   BAT: 'Batsman',
@@ -89,6 +104,27 @@ function useCountUp(target: number, duration = 600) {
   return display
 }
 
+function playHammerSound() {
+  const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!AudioContextClass) return
+
+  const ctx = new AudioContextClass()
+  const now = ctx.currentTime
+  const gain = ctx.createGain()
+  const osc = ctx.createOscillator()
+  osc.type = 'triangle'
+  osc.frequency.setValueAtTime(140, now)
+  osc.frequency.exponentialRampToValueAtTime(45, now + 0.08)
+  gain.gain.setValueAtTime(0.001, now)
+  gain.gain.exponentialRampToValueAtTime(0.45, now + 0.01)
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22)
+  osc.connect(gain)
+  gain.connect(ctx.destination)
+  osc.start(now)
+  osc.stop(now + 0.24)
+  setTimeout(() => void ctx.close().catch(() => undefined), 350)
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 
 export function AuctionRoom({ initial, accessToken }: Props) {
@@ -100,7 +136,17 @@ export function AuctionRoom({ initial, accessToken }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [particles, setParticles] = useState<CashParticle[]>([])
   const [confetti, setConfetti] = useState<ConfettiPiece[]>([])
+  const [soldBanner, setSoldBanner] = useState<SoldBanner | null>(null)
+  const [editingSettings, setEditingSettings] = useState(false)
+  const [settingsSaving, setSettingsSaving] = useState(false)
+  const [settingsForm, setSettingsForm] = useState({
+    name: initial.name,
+    format: initial.format,
+    maxSquadSize: initial.maxSquadSize,
+    maxOverseasPerSquad: initial.maxOverseasPerSquad,
+  })
   const feedRef = useRef<HTMLDivElement>(null)
+  const currentLotRef = useRef(initial.currentLot)
 
   const highestBid = bidFeed.findLast(
     (b) => !b.teamName.startsWith('✓') && !b.teamName.startsWith('—'),
@@ -156,9 +202,10 @@ export function AuctionRoom({ initial, accessToken }: Props) {
     })
 
     socket.on(AUCTION_EVENTS.LOT_STARTED, ({ lot }: LotStartedPayload) => {
+      currentLotRef.current = { id: lot.id, lotNumber: lot.lotNumber, status: 'IN_PROGRESS', player: lot.player, bids: [] }
       setAuction((a) => ({
         ...a,
-        currentLot: { id: lot.id, lotNumber: lot.lotNumber, status: 'IN_PROGRESS', player: lot.player, bids: [] },
+        currentLot: currentLotRef.current,
       }))
       setBidFeed([])
       setBidAmount('')
@@ -186,15 +233,40 @@ export function AuctionRoom({ initial, accessToken }: Props) {
 
     socket.on(AUCTION_EVENTS.LOT_SOLD, (payload: LotSoldPayload) => {
       spawnConfetti()
+      playHammerSound()
       setAuction((a) => ({
         ...a,
         currentLot: null,
+        auctionLots: (a.auctionLots ?? []).map((lot) =>
+          lot.id === payload.lotId
+            ? {
+                ...lot,
+                status: 'SOLD',
+                soldToTeamId: payload.auctionTeamId,
+                soldPrice: payload.soldPrice,
+                soldToTeam: { team: { name: payload.teamName } },
+              }
+            : lot,
+        ),
         auctionTeams: a.auctionTeams.map((t) =>
           t.id === payload.auctionTeamId
-            ? { ...t, remainingPurse: (Number(t.remainingPurse) - Number(payload.soldPrice)).toString() }
+            ? {
+                ...t,
+                remainingPurse: (Number(t.remainingPurse) - Number(payload.soldPrice)).toString(),
+                playersAcquired: t.playersAcquired + 1,
+                overseasAcquired: t.overseasAcquired + (currentLotRef.current?.player.isOverseas ? 1 : 0),
+              }
             : t,
         ),
       }))
+      setSoldBanner({
+        id: `${payload.lotId}-${Date.now()}`,
+        playerName: currentLotRef.current?.player.name ?? 'Player',
+        teamName: payload.teamName,
+        soldPrice: payload.soldPrice,
+      })
+      currentLotRef.current = null
+      setTimeout(() => setSoldBanner(null), 1800)
       setBidFeed((f) => [
         ...f,
         { id: `sold-${Date.now()}`, teamName: `✓ SOLD to ${payload.teamName}`, amount: payload.soldPrice, ts: Date.now() },
@@ -202,7 +274,15 @@ export function AuctionRoom({ initial, accessToken }: Props) {
     })
 
     socket.on(AUCTION_EVENTS.LOT_UNSOLD, () => {
-      setAuction((a) => ({ ...a, currentLot: null }))
+      const lotId = currentLotRef.current?.id
+      currentLotRef.current = null
+      setAuction((a) => ({
+        ...a,
+        currentLot: null,
+        auctionLots: (a.auctionLots ?? []).map((lot) =>
+          lot.id === lotId ? { ...lot, status: 'UNSOLD' } : lot,
+        ),
+      }))
       setBidFeed((f) => [
         ...f,
         { id: `unsold-${Date.now()}`, teamName: '— UNSOLD', amount: '-', ts: Date.now() },
@@ -248,10 +328,52 @@ export function AuctionRoom({ initial, accessToken }: Props) {
     setBidAmount('')
   }
 
+  async function handleSettingsSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSettingsSaving(true)
+    setError(null)
+    try {
+      const updated: AuctionDetail = await apiPatch(`/auctions/${auction.id}`, accessToken, {
+        name: settingsForm.name,
+        format: settingsForm.format,
+        maxSquadSize: Number(settingsForm.maxSquadSize),
+        maxOverseasPerSquad: Number(settingsForm.maxOverseasPerSquad),
+      })
+      setAuction((a) => ({ ...a, ...updated }))
+      setSettingsForm({
+        name: updated.name,
+        format: updated.format,
+        maxSquadSize: updated.maxSquadSize,
+        maxOverseasPerSquad: updated.maxOverseasPerSquad,
+      })
+      setEditingSettings(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save settings')
+    } finally {
+      setSettingsSaving(false)
+    }
+  }
+
   const currentLot = auction.currentLot
 
   return (
     <div className="space-y-6">
+      {soldBanner && (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/35 backdrop-blur-[1px]">
+          <div className="relative overflow-hidden rounded-3xl border border-gold/60 bg-card px-10 py-8 text-center shadow-2xl animate-sold-pop">
+            <div className="mx-auto mb-3 h-20 w-20 animate-hammer-strike">
+              <div className="mx-auto h-8 w-14 -rotate-12 rounded-md bg-gold shadow-lg" />
+              <div className="mx-auto -mt-1 h-14 w-3 rotate-45 rounded-full bg-foreground/80" />
+            </div>
+            <p className="text-5xl font-black uppercase tracking-widest text-gold-foreground dark:text-gold">Sold</p>
+            <p className="mt-2 text-lg font-semibold">{soldBanner.playerName}</p>
+            <p className="text-sm text-muted-foreground">
+              to {soldBanner.teamName} for ₹{Number(soldBanner.soldPrice).toLocaleString('en-IN')}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -259,6 +381,9 @@ export function AuctionRoom({ initial, accessToken }: Props) {
             ← Auctions
           </Link>
           <h1 className="mt-1 text-2xl font-bold tracking-tight">{auction.name}</h1>
+          <p className="text-sm text-muted-foreground">
+            {auction.format.replace('_', ' ')} · Purse ₹{Number(auction.purseSizePerTeam).toLocaleString()} · Squad {auction.maxSquadSize} · Overseas {auction.maxOverseasPerSquad}
+          </p>
           <Badge variant={STATUS_VARIANT[auction.status]} dot={auction.status === 'LIVE'} className="mt-1.5">
             {auction.status}
           </Badge>
@@ -266,6 +391,9 @@ export function AuctionRoom({ initial, accessToken }: Props) {
 
         {/* Conductor controls */}
         <div className="flex gap-2 flex-wrap">
+          <Button size="sm" variant="outline" disabled={settingsSaving} onClick={() => setEditingSettings((v) => !v)}>
+            {editingSettings ? 'Close Settings' : 'Edit Settings'}
+          </Button>
           {auction.status === 'DRAFT' && (
             <Button size="sm" disabled={actionLoading} onClick={() => apiAction(`/auctions/${auction.id}/start`)}>
               Start Auction
@@ -312,6 +440,55 @@ export function AuctionRoom({ initial, accessToken }: Props) {
       {error && (
         <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
       )}
+
+      {editingSettings && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Auction Settings</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSettingsSubmit} className="grid gap-3 md:grid-cols-4">
+              <div className="space-y-1 md:col-span-2">
+                <Label htmlFor="room-auction-name" className="text-xs">Name</Label>
+                <Input id="room-auction-name" value={settingsForm.name} onChange={(e) => setSettingsForm((f) => ({ ...f, name: e.target.value }))} required />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="room-auction-format" className="text-xs">Format</Label>
+                <select
+                  id="room-auction-format"
+                  value={settingsForm.format}
+                  onChange={(e) => setSettingsForm((f) => ({ ...f, format: e.target.value as AuctionDetail['format'] }))}
+                  className="flex h-8 w-full rounded-lg border border-border bg-background px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  {FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Purse</Label>
+                <p className="flex h-8 items-center rounded-lg border border-border bg-muted px-2.5 text-sm text-muted-foreground">
+                  ₹{Number(auction.purseSizePerTeam).toLocaleString()}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="room-max-squad" className="text-xs">Max squad</Label>
+                <Input id="room-max-squad" type="number" min={1} max={50} value={settingsForm.maxSquadSize} onChange={(e) => setSettingsForm((f) => ({ ...f, maxSquadSize: Number(e.target.value) }))} required />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="room-max-overseas" className="text-xs">Max overseas</Label>
+                <Input id="room-max-overseas" type="number" min={0} max={50} value={settingsForm.maxOverseasPerSquad} onChange={(e) => setSettingsForm((f) => ({ ...f, maxOverseasPerSquad: Number(e.target.value) }))} required />
+              </div>
+              <p className="text-xs text-muted-foreground md:col-span-2">
+                Purse changes are limited to draft auctions so team purse balances stay accurate.
+              </p>
+              <Button type="submit" size="sm" className="md:col-span-4" disabled={settingsSaving || !settingsForm.name}>
+                {settingsSaving ? 'Saving...' : 'Save Settings'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      <AuctionInsights auction={auction} lots={auction.auctionLots ?? []} />
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* ── Current lot ────────────────────────────────────────── */}
@@ -541,6 +718,11 @@ export function AuctionRoom({ initial, accessToken }: Props) {
                     <p className="text-xs text-muted-foreground">
                       {t.playersAcquired} players · {t.overseasAcquired} overseas
                     </p>
+                    {(t.team.ownerName || t.team.coOwnerName) && (
+                      <p className="text-xs text-muted-foreground">
+                        {[t.team.ownerName, t.team.coOwnerName].filter(Boolean).join(' / ')}
+                      </p>
+                    )}
                   </div>
                 )
               })}

@@ -34,6 +34,13 @@ export class PlayersController {
     return this.playersService.create(body, user.id);
   }
 
+  @Post('import')
+  @UseInterceptors(FileInterceptor('csv'))
+  importCsv(@UploadedFile() file: Express.Multer.File | undefined, @CurrentUser() user: AuthUser) {
+    if (!file) throw new BadRequestException('No CSV file was uploaded');
+    return this.playersService.importCsv(file, user.id);
+  }
+
   @Patch(':id')
   update(@Param('id') id: string, @Body() body: UpdatePlayerDto, @CurrentUser() user: AuthUser) {
     return this.playersService.update(id, body, user.id);

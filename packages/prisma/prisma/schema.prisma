@@ -109,6 +109,8 @@ model Team {
   shortName      String
   primaryColor   String?
   logoUrl        String?
+  ownerName      String?
+  coOwnerName    String?
   organizationId String?
   createdAt      DateTime @default(now())
 

@@ -34,6 +34,13 @@ export class TeamsController {
     return this.teamsService.create(body, user.id);
   }
 
+  @Post('import')
+  @UseInterceptors(FileInterceptor('csv'))
+  importCsv(@UploadedFile() file: Express.Multer.File | undefined, @CurrentUser() user: AuthUser) {
+    if (!file) throw new BadRequestException('No CSV file was uploaded');
+    return this.teamsService.importCsv(file, user.id);
+  }
+
   @Patch(':id')
   update(@Param('id') id: string, @Body() body: UpdateTeamDto, @CurrentUser() user: AuthUser) {
     return this.teamsService.update(id, body, user.id);

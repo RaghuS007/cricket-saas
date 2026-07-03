@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
 } from '@nestjs/common';
 import { AuctionService } from './auction.service';
@@ -11,6 +12,7 @@ import { AuctionGateway } from './auction.gateway';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthUser } from '../auth/auth.types';
 import { CreateAuctionDto } from './dto/create-auction.dto';
+import { UpdateAuctionDto } from './dto/update-auction.dto';
 import { AddTeamDto } from './dto/add-team.dto';
 import { AddLotsDto } from './dto/add-lots.dto';
 import { SellLotDto } from './dto/sell-lot.dto';
@@ -37,6 +39,20 @@ export class AuctionController {
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.auctionService.findOne(id, user.id);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateAuctionDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.auctionService.update(id, dto, user.id);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.auctionService.remove(id, user.id);
   }
 
   // ── State machine ─────────────────────────────────────────────────────────

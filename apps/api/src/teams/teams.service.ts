@@ -1,15 +1,60 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { Team } from '@prisma/client';
 import { unlink } from 'fs/promises';
 import { basename, join } from 'path';
 import { PrismaService } from '../prisma.service';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { UpdateTeamDto } from './dto/update-team.dto';
 import { TEAM_LOGO_DIR } from './team-logo.storage';
+
+const MAX_CSV_BYTES = 1024 * 1024;
+
+function parseCsv(buffer: Buffer): Record<string, string>[] {
+  const text = buffer.toString('utf8').replace(/^\uFEFF/, '').trim();
+  if (!text) return [];
+
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+    if (char === '"') {
+      if (quoted && next === '"') {
+        cell += '"';
+        i++;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === ',' && !quoted) {
+      row.push(cell.trim());
+      cell = '';
+    } else if ((char === '\n' || char === '\r') && !quoted) {
+      if (char === '\r' && next === '\n') i++;
+      row.push(cell.trim());
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else {
+      cell += char;
+    }
+  }
+  row.push(cell.trim());
+  rows.push(row);
+
+  const [headers, ...data] = rows;
+  const normalized = headers.map((h) => h.trim().toLowerCase());
+  return data
+    .filter((r) => r.some(Boolean))
+    .map((r) => Object.fromEntries(normalized.map((h, i) => [h, r[i]?.trim() ?? ''])));
+}
 
 @Injectable()
 export class TeamsService {
@@ -45,6 +90,48 @@ export class TeamsService {
   async create(data: CreateTeamDto, userId: string) {
     const orgId = await this.getOrgId(userId);
     return this.prisma.team.create({ data: { ...data, organizationId: orgId } });
+  }
+
+  async importCsv(file: Express.Multer.File, userId: string) {
+    if (file.size > MAX_CSV_BYTES) throw new BadRequestException('CSV must be 1MB or smaller');
+    const orgId = await this.getOrgId(userId);
+    const rows = parseCsv(file.buffer);
+    if (rows.length === 0) throw new BadRequestException('CSV has no rows');
+
+    const imported: Team[] = [];
+    for (const [index, row] of rows.entries()) {
+      const name = row.name;
+      const shortName = row.shortname || row.short_name;
+      if (!name || !shortName) throw new BadRequestException(`Row ${index + 2}: name and shortName are required`);
+      const primaryColor = row.primarycolor || row.primary_color || undefined;
+      if (primaryColor && !/^#[0-9A-Fa-f]{6}$/.test(primaryColor)) {
+        throw new BadRequestException(`Row ${index + 2}: primaryColor must be a hex color like #16a34a`);
+      }
+
+      imported.push(
+        await this.prisma.team.upsert({
+          where: { organizationId_shortName: { organizationId: orgId, shortName: shortName.toUpperCase() } },
+          create: {
+            name,
+            shortName: shortName.toUpperCase(),
+            primaryColor,
+            logoUrl: row.logourl || row.logo_url || undefined,
+            ownerName: row.ownername || row.owner_name || undefined,
+            coOwnerName: row.coownername || row.co_owner_name || undefined,
+            organizationId: orgId,
+          },
+          update: {
+            name,
+            primaryColor,
+            logoUrl: row.logourl || row.logo_url || undefined,
+            ownerName: row.ownername || row.owner_name || undefined,
+            coOwnerName: row.coownername || row.co_owner_name || undefined,
+          },
+        }),
+      );
+    }
+
+    return { imported: imported.length, items: imported };
   }
 
   async update(id: string, data: UpdateTeamDto, userId: string) {

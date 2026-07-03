@@ -26,6 +26,8 @@ export function TeamEditForm({ team, accessToken, onSaved, onLogoUpdated, onCanc
   const [name, setName] = useState(team.name)
   const [shortName, setShortName] = useState(team.shortName)
   const [primaryColor, setPrimaryColor] = useState(team.primaryColor ?? '#16a34a')
+  const [ownerName, setOwnerName] = useState(team.ownerName ?? '')
+  const [coOwnerName, setCoOwnerName] = useState(team.coOwnerName ?? '')
   const [logoUrl, setLogoUrl] = useState(team.logoUrl)
   const [loading, setLoading] = useState(false)
   const [logoUploading, setLogoUploading] = useState(false)
@@ -66,6 +68,8 @@ export function TeamEditForm({ team, accessToken, onSaved, onLogoUpdated, onCanc
         name,
         shortName,
         primaryColor,
+        ownerName: ownerName.trim() || undefined,
+        coOwnerName: coOwnerName.trim() || undefined,
       })
       onSaved({ ...updated, logoUrl })
     } catch (err) {
@@ -96,6 +100,14 @@ export function TeamEditForm({ team, accessToken, onSaved, onLogoUpdated, onCanc
         <div className="col-span-2 space-y-1">
           <Label htmlFor={`edit-team-name-${team.id}`} className="text-xs">Name</Label>
           <Input id={`edit-team-name-${team.id}`} value={name} onChange={(e) => setName(e.target.value)} required />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`edit-team-owner-${team.id}`} className="text-xs">Owner</Label>
+          <Input id={`edit-team-owner-${team.id}`} value={ownerName} onChange={(e) => setOwnerName(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`edit-team-co-owner-${team.id}`} className="text-xs">Co-owner</Label>
+          <Input id={`edit-team-co-owner-${team.id}`} value={coOwnerName} onChange={(e) => setCoOwnerName(e.target.value)} />
         </div>
         <div className="space-y-1">
           <Label htmlFor={`edit-team-short-${team.id}`} className="text-xs">Short name</Label>

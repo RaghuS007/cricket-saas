@@ -1,15 +1,66 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { PlayerRole, type Player } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 import { unlink } from 'fs/promises';
 import { basename, join } from 'path';
 import { PrismaService } from '../prisma.service';
 import { CreatePlayerDto } from './dto/create-player.dto';
 import { UpdatePlayerDto } from './dto/update-player.dto';
 import { PLAYER_PHOTO_DIR } from './player-photo.storage';
+
+const MAX_CSV_BYTES = 1024 * 1024;
+
+function parseCsv(buffer: Buffer): Record<string, string>[] {
+  const text = buffer.toString('utf8').replace(/^\uFEFF/, '').trim();
+  if (!text) return [];
+
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+    if (char === '"') {
+      if (quoted && next === '"') {
+        cell += '"';
+        i++;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === ',' && !quoted) {
+      row.push(cell.trim());
+      cell = '';
+    } else if ((char === '\n' || char === '\r') && !quoted) {
+      if (char === '\r' && next === '\n') i++;
+      row.push(cell.trim());
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else {
+      cell += char;
+    }
+  }
+  row.push(cell.trim());
+  rows.push(row);
+
+  const [headers, ...data] = rows;
+  const normalized = headers.map((h) => h.trim().toLowerCase());
+  return data
+    .filter((r) => r.some(Boolean))
+    .map((r) => Object.fromEntries(normalized.map((h, i) => [h, r[i]?.trim() ?? ''])));
+}
+
+function parseBoolean(value: string | undefined): boolean | undefined {
+  if (!value) return undefined;
+  return ['true', '1', 'yes', 'y'].includes(value.toLowerCase());
+}
 
 @Injectable()
 export class PlayersService {
@@ -45,6 +96,43 @@ export class PlayersService {
   async create(data: CreatePlayerDto, userId: string) {
     const orgId = await this.getOrgId(userId);
     return this.prisma.player.create({ data: { ...data, organizationId: orgId } });
+  }
+
+  async importCsv(file: Express.Multer.File, userId: string) {
+    if (file.size > MAX_CSV_BYTES) throw new BadRequestException('CSV must be 1MB or smaller');
+    const orgId = await this.getOrgId(userId);
+    const rows = parseCsv(file.buffer);
+    if (rows.length === 0) throw new BadRequestException('CSV has no rows');
+
+    const imported: Player[] = [];
+    for (const [index, row] of rows.entries()) {
+      const name = row.name;
+      const role = row.role as PlayerRole;
+      const basePrice = Number(row.baseprice || row.base_price);
+      if (!name || !role || Number.isNaN(basePrice)) {
+        throw new BadRequestException(`Row ${index + 2}: name, role, and basePrice are required`);
+      }
+      if (!Object.values(PlayerRole).includes(role)) {
+        throw new BadRequestException(`Row ${index + 2}: role must be BAT, BOWL, ALL_ROUNDER, or WICKET_KEEPER`);
+      }
+
+      imported.push(
+        await this.prisma.player.create({
+          data: {
+            name,
+            role,
+            country: row.country || undefined,
+            basePrice: new Decimal(basePrice),
+            isOverseas: parseBoolean(row.isoverseas || row.is_overseas) ?? false,
+            avatarUrl: row.avatarurl || row.avatar_url || undefined,
+            photoUrl: row.photourl || row.photo_url || undefined,
+            organizationId: orgId,
+          },
+        }),
+      );
+    }
+
+    return { imported: imported.length, items: imported };
   }
 
   async update(id: string, data: UpdatePlayerDto, userId: string) {

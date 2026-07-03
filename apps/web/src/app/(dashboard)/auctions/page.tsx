@@ -4,6 +4,7 @@ import { apiGet } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import type { Auction, AuctionStatus } from '@/lib/types'
+import { AuctionDeleteButton } from './auction-delete-button'
 
 const STATUS_VARIANT: Record<AuctionStatus, 'live' | 'neutral' | 'warning' | 'muted'> = {
   DRAFT: 'neutral',
@@ -49,8 +50,8 @@ export default async function AuctionsPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {auctions.map((a) => (
-            <Link key={a.id} href={`/auctions/${a.id}`}>
-              <Card className="h-full cursor-pointer transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md">
+            <Card key={a.id} className="h-full transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md">
+              <Link href={`/auctions/${a.id}`} className="block">
                 <CardHeader>
                   <div className="flex items-start justify-between gap-2">
                     <CardTitle className="text-base">{a.name}</CardTitle>
@@ -62,8 +63,11 @@ export default async function AuctionsPage() {
                   <p>Purse: ₹{Number(a.purseSizePerTeam).toLocaleString()}</p>
                   <p>{a._count?.auctionTeams ?? 0} teams · {a._count?.auctionLots ?? 0} players</p>
                 </CardContent>
-              </Card>
-            </Link>
+              </Link>
+              <div className="border-t border-border px-6 py-3">
+                <AuctionDeleteButton auctionId={a.id} auctionName={a.name} accessToken={token ?? ''} />
+              </div>
+            </Card>
           ))}
         </div>
       )}

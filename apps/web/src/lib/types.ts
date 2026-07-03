@@ -6,6 +6,8 @@ export interface Team {
   shortName: string
   primaryColor: string | null
   logoUrl: string | null
+  ownerName: string | null
+  coOwnerName: string | null
   organizationId: string | null
 }
 
@@ -31,7 +33,15 @@ export interface AuctionTeam {
   remainingPurse: string
   playersAcquired: number
   overseasAcquired: number
-  team: { id: string; name: string; shortName: string; primaryColor: string | null; logoUrl: string | null }
+  team: {
+    id: string
+    name: string
+    shortName: string
+    primaryColor: string | null
+    logoUrl: string | null
+    ownerName: string | null
+    coOwnerName: string | null
+  }
 }
 
 export interface Player {
@@ -51,6 +61,7 @@ export interface AuctionLot {
   lotNumber: number
   status: AuctionLotStatus
   soldPrice: string | null
+  soldToTeamId?: string | null
   player: Player
   soldToTeam?: { team: { name: string } } | null
 }
@@ -70,6 +81,7 @@ export interface AuctionDetail extends Auction {
   auctionTeams: AuctionTeam[]
   currentLot: CurrentLot | null
   lotCounts: Array<{ status: AuctionLotStatus; _count: number }>
+  auctionLots?: AuctionLot[]
 }
 
 // ── Socket event payloads ─────────────────────────────────────────────────────
