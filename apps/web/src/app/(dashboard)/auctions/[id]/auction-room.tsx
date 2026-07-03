@@ -27,6 +27,7 @@ interface BidFeedItem {
   teamName: string
   amount: string
   ts: number
+  auctionTeamId?: string
 }
 
 interface CashParticle {
@@ -172,7 +173,13 @@ export function AuctionRoom({ initial, accessToken }: Props) {
         if (delta > 0) spawnParticles(`+₹${(delta / 100000).toFixed(1)}L`)
         return [
           ...f,
-          { id: `${payload.auctionTeamId}-${Date.now()}`, teamName: payload.teamName, amount: payload.amount, ts: Date.now() },
+          {
+            id: `${payload.auctionTeamId}-${Date.now()}`,
+            teamName: payload.teamName,
+            amount: payload.amount,
+            ts: Date.now(),
+            auctionTeamId: payload.auctionTeamId,
+          },
         ]
       })
     })
@@ -281,8 +288,7 @@ export function AuctionRoom({ initial, accessToken }: Props) {
                 size="sm" disabled={actionLoading || !selectedTeamId}
                 onClick={() =>
                   apiAction(`/auctions/${auction.id}/lots/${currentLot.id}/sell`, {
-                    auctionTeamId: selectedTeamId,
-                    soldPrice: highestBid ? Number(highestBid.amount) : Number(currentLot.player.basePrice),
+                    auctionTeamId: highestBid?.auctionTeamId ?? selectedTeamId,
                   })
                 }
               >

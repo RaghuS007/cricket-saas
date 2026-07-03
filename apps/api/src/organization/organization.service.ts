@@ -13,7 +13,7 @@ export class OrganizationService {
 
   async create(dto: CreateOrganizationDto, userId: string) {
     const profile = await this.prisma.userProfile.findUnique({ where: { id: userId } });
-    if (!profile) throw new BadRequestException('User profile not found — call /auth/sync-profile first');
+    if (!profile) throw new BadRequestException('User profile not found');
     if (profile.organizationId)
       throw new ConflictException('User already belongs to an organization');
 

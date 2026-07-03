@@ -41,6 +41,7 @@ export interface Player {
   basePrice: string
   isOverseas: boolean
   avatarUrl: string | null
+  organizationId?: string | null
 }
 
 export interface AuctionLot {

@@ -5,5 +5,8 @@
   "testRegex": ".e2e-spec.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
-  }
+  },
+  "setupFiles": ["<rootDir>/jest-setup-env.js"],
+  "maxWorkers": 1,
+  "testTimeout": 15000
 }

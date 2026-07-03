@@ -1,4 +1,4 @@
-import { IsNumber, IsString, Min } from 'class-validator';
+import { IsNumber, IsPositive, IsString, Max } from 'class-validator';
 
 export class PlaceBidDto {
   @IsString()
@@ -11,6 +11,7 @@ export class PlaceBidDto {
   auctionTeamId!: string;
 
   @IsNumber()
-  @Min(0)
+  @IsPositive()
+  @Max(999_999_999_999)
   amount!: number;
 }

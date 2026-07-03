@@ -260,35 +260,47 @@ export class AuctionService {
     const orgId = await this.getOrgId(userId);
     await this.assertAuction(auctionId, orgId);
 
-    const lot = await this.prisma.auctionLot.findFirst({
-      where: { id: lotId, auctionId, status: AuctionLotStatus.IN_PROGRESS },
-      include: { player: true },
-    });
-    if (!lot) throw new NotFoundException('No active lot found');
+    // Serialize concurrent sell/bid attempts on this lot by locking its row,
+    // so two simultaneous "Sell" calls can't both see IN_PROGRESS and both commit.
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT id FROM "AuctionLot" WHERE id = ${lotId} FOR UPDATE`;
 
-    const team = await this.prisma.auctionTeam.findFirst({
-      where: { id: dto.auctionTeamId, auctionId },
-      include: {
-        wonLots: { include: { player: true } },
-        team: true,
-      },
-    });
-    if (!team) throw new NotFoundException('AuctionTeam not found');
+      const lot = await tx.auctionLot.findFirst({
+        where: { id: lotId, auctionId, status: AuctionLotStatus.IN_PROGRESS },
+        include: { player: true },
+      });
+      if (!lot) throw new NotFoundException('No active lot found');
 
-    const price = new Decimal(dto.soldPrice);
-    if (price.gt(team.remainingPurse))
-      throw new BadRequestException('Team has insufficient purse');
+      const team = await tx.auctionTeam.findFirst({
+        where: { id: dto.auctionTeamId, auctionId },
+        include: {
+          wonLots: { include: { player: true } },
+          team: true,
+        },
+      });
+      if (!team) throw new NotFoundException('AuctionTeam not found');
 
-    const auction = await this.prisma.auction.findUniqueOrThrow({
-      where: { id: auctionId },
-    });
-    if (team.playersAcquired >= auction.maxSquadSize)
-      throw new BadRequestException('Team has reached max squad size');
-    if (lot.player.isOverseas && team.overseasAcquired >= auction.maxOverseasPerSquad)
-      throw new BadRequestException('Team has reached max overseas quota');
+      // Price is derived from the recorded bids, never trusted from the client.
+      const highestBid = await tx.bid.findFirst({
+        where: { auctionLotId: lotId },
+        orderBy: { amount: 'desc' },
+      });
+      if (highestBid && highestBid.auctionTeamId !== dto.auctionTeamId)
+        throw new BadRequestException('Sold team must match the highest bidder');
+      const price = highestBid ? highestBid.amount : lot.player.basePrice;
 
-    const [updatedLot] = await this.prisma.$transaction([
-      this.prisma.auctionLot.update({
+      if (price.gt(team.remainingPurse))
+        throw new BadRequestException('Team has insufficient purse');
+
+      const auction = await tx.auction.findUniqueOrThrow({
+        where: { id: auctionId },
+      });
+      if (team.playersAcquired >= auction.maxSquadSize)
+        throw new BadRequestException('Team has reached max squad size');
+      if (lot.player.isOverseas && team.overseasAcquired >= auction.maxOverseasPerSquad)
+        throw new BadRequestException('Team has reached max overseas quota');
+
+      const updatedLot = await tx.auctionLot.update({
         where: { id: lotId },
         data: {
           status: AuctionLotStatus.SOLD,
@@ -296,18 +308,18 @@ export class AuctionService {
           soldPrice: price,
         },
         include: { player: true, soldToTeam: { include: { team: true } } },
-      }),
-      this.prisma.auctionTeam.update({
+      });
+      await tx.auctionTeam.update({
         where: { id: dto.auctionTeamId },
         data: {
           remainingPurse: { decrement: price },
           playersAcquired: { increment: 1 },
           overseasAcquired: lot.player.isOverseas ? { increment: 1 } : undefined,
         },
-      }),
-    ]);
+      });
 
-    return updatedLot;
+      return updatedLot;
+    });
   }
 
   async unsoldLot(auctionId: string, lotId: string, userId: string) {
@@ -341,42 +353,49 @@ export class AuctionService {
     if (auction.status !== AuctionStatus.LIVE)
       throw new BadRequestException('Auction is not live');
 
-    const lot = await this.prisma.auctionLot.findFirst({
-      where: { id: lotId, auctionId, status: AuctionLotStatus.IN_PROGRESS },
-      include: { player: true },
-    });
-    if (!lot) throw new BadRequestException('No active lot');
-
-    const team = await this.prisma.auctionTeam.findFirst({
-      where: { id: auctionTeamId, auctionId },
-      include: { team: true },
-    });
-    if (!team) throw new BadRequestException('Invalid team');
-
     const bidAmount = new Decimal(amount);
 
-    // Must be at least base price
-    if (bidAmount.lt(lot.player.basePrice))
-      throw new BadRequestException(`Bid must be at least ${lot.player.basePrice}`);
+    // Serialize concurrent bids on this lot: lock its row for the duration of
+    // the transaction so two simultaneous bids can't both read the same
+    // "current highest" and both be accepted.
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT id FROM "AuctionLot" WHERE id = ${lotId} FOR UPDATE`;
 
-    // Must exceed current highest bid
-    const highest = await this.prisma.bid.findFirst({
-      where: { auctionLotId: lotId },
-      orderBy: { amount: 'desc' },
+      const lot = await tx.auctionLot.findFirst({
+        where: { id: lotId, auctionId, status: AuctionLotStatus.IN_PROGRESS },
+        include: { player: true },
+      });
+      if (!lot) throw new BadRequestException('No active lot');
+
+      const team = await tx.auctionTeam.findFirst({
+        where: { id: auctionTeamId, auctionId },
+        include: { team: true },
+      });
+      if (!team) throw new BadRequestException('Invalid team');
+
+      // Must be at least base price
+      if (bidAmount.lt(lot.player.basePrice))
+        throw new BadRequestException(`Bid must be at least ${lot.player.basePrice}`);
+
+      // Must exceed current highest bid
+      const highest = await tx.bid.findFirst({
+        where: { auctionLotId: lotId },
+        orderBy: { amount: 'desc' },
+      });
+      if (highest && bidAmount.lte(highest.amount))
+        throw new BadRequestException(`Bid must exceed current high of ${highest.amount}`);
+
+      // Team must have enough purse
+      if (bidAmount.gt(team.remainingPurse))
+        throw new BadRequestException('Insufficient purse');
+
+      const bid = await tx.bid.create({
+        data: { auctionLotId: lotId, auctionTeamId, amount: bidAmount },
+        include: { auctionTeam: { include: { team: { select: { name: true } } } } },
+      });
+
+      return { bid, team };
     });
-    if (highest && bidAmount.lte(highest.amount))
-      throw new BadRequestException(`Bid must exceed current high of ${highest.amount}`);
-
-    // Team must have enough purse
-    if (bidAmount.gt(team.remainingPurse))
-      throw new BadRequestException('Insufficient purse');
-
-    const bid = await this.prisma.bid.create({
-      data: { auctionLotId: lotId, auctionTeamId, amount: bidAmount },
-      include: { auctionTeam: { include: { team: { select: { name: true } } } } },
-    });
-
-    return { bid, team };
   }
 
   async getBidHistory(auctionId: string, lotId: string, userId: string) {
