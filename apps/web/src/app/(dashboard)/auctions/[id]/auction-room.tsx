@@ -327,10 +327,10 @@ export function AuctionRoom({ initial, accessToken }: Props) {
                 <div className="space-y-4">
                   {/* Player identity */}
                   <div className="flex items-center gap-4">
-                    {currentLot.player.avatarUrl ? (
+                    {assetUrl(currentLot.player.photoUrl) ?? currentLot.player.avatarUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={currentLot.player.avatarUrl}
+                        src={assetUrl(currentLot.player.photoUrl) ?? currentLot.player.avatarUrl ?? undefined}
                         alt={currentLot.player.name}
                         className="h-20 w-20 rounded-2xl object-cover shadow-md ring-2 ring-border shrink-0"
                       />

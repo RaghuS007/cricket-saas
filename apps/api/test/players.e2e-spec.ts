@@ -132,6 +132,90 @@ describe('Players (e2e)', () => {
     });
   });
 
+  describe('photo upload', () => {
+    // A minimal valid 1x1 PNG, used as a real file for multipart upload tests.
+    const PNG_BUFFER = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64',
+    );
+
+    async function createPlayer(user: { accessToken: string }, name: string) {
+      const res = await request(app.getHttpServer())
+        .post('/players')
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .send({ name, role: 'BAT', basePrice: 100 })
+        .expect(201);
+      return res.body as { id: string };
+    }
+
+    it('uploads a photo for a player the caller owns and returns the new photoUrl', async () => {
+      const user = await registerUserWithOrg(app);
+      const player = await createPlayer(user, `Photo Player ${Date.now()}`);
+
+      const res = await request(app.getHttpServer())
+        .post(`/players/${player.id}/photo`)
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .attach('photo', PNG_BUFFER, 'photo.png')
+        .expect(201);
+
+      expect(res.body.photoUrl).toMatch(/^\/uploads\/player-photos\/.+\.png$/);
+    });
+
+    it('rejects an unauthenticated request', async () => {
+      const user = await registerUserWithOrg(app);
+      const player = await createPlayer(user, `Photo Player ${Date.now() + 1}`);
+
+      await request(app.getHttpServer())
+        .post(`/players/${player.id}/photo`)
+        .attach('photo', PNG_BUFFER, 'photo.png')
+        .expect(401);
+    });
+
+    it('rejects uploading a photo with no file attached', async () => {
+      const user = await registerUserWithOrg(app);
+      const player = await createPlayer(user, `Photo Player ${Date.now() + 2}`);
+
+      await request(app.getHttpServer())
+        .post(`/players/${player.id}/photo`)
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .expect(400);
+    });
+
+    it('rejects a non-image file type', async () => {
+      const user = await registerUserWithOrg(app);
+      const player = await createPlayer(user, `Photo Player ${Date.now() + 3}`);
+
+      await request(app.getHttpServer())
+        .post(`/players/${player.id}/photo`)
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .attach('photo', Buffer.from('not an image'), 'evil.txt')
+        .expect(400);
+    });
+
+    it("rejects uploading a photo for another organization's player (IDOR)", async () => {
+      const owner = await registerUserWithOrg(app);
+      const attacker = await registerUserWithOrg(app);
+      const player = await createPlayer(owner, `Photo Player ${Date.now() + 4}`);
+
+      await request(app.getHttpServer())
+        .post(`/players/${player.id}/photo`)
+        .set('Authorization', `Bearer ${attacker.accessToken}`)
+        .attach('photo', PNG_BUFFER, 'photo.png')
+        .expect(404);
+    });
+
+    it('rejects uploading a photo for a global (organizationId: null) reference player', async () => {
+      const user = await registerUserWithOrg(app);
+      const fixtures = await ensureGlobalFixtures();
+
+      await request(app.getHttpServer())
+        .post(`/players/${fixtures.playerIds[0]}/photo`)
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .attach('photo', PNG_BUFFER, 'photo.png')
+        .expect(404);
+    });
+  });
+
   describe('DELETE /players/:id', () => {
     async function createPlayer(user: { accessToken: string }, name: string) {
       const res = await request(app.getHttpServer())

@@ -53,6 +53,16 @@ function TeamAvatar({ logoUrl, primaryColor }: { logoUrl?: string | null; primar
   )
 }
 
+// Uploaded photos (host-relative, served by the API) take priority over the
+// external avatarUrl field, since a photo the org uploaded is more likely to
+// be the "real" picture than a generic placeholder pasted as a URL.
+function PlayerAvatar({ photoUrl, avatarUrl, name }: { photoUrl?: string | null; avatarUrl?: string | null; name: string }) {
+  const src = assetUrl(photoUrl) ?? avatarUrl ?? undefined
+  if (!src) return null
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt={name} className="h-7 w-7 rounded-full object-cover shrink-0" />
+}
+
 export function AuctionSetup({ initial, initialLots, allTeams, allPlayers, accessToken }: Props) {
   const router = useRouter()
   const [auction, setAuction] = useState(initial)
@@ -217,9 +227,16 @@ export function AuctionSetup({ initial, initialLots, allTeams, allPlayers, acces
   }
 
   function handlePlayerSaved(updated: Player) {
+    applyPlayerUpdate(updated)
+    setEditingPlayerId(null)
+  }
+
+  // Photo uploads refresh the player everywhere it's shown but leave the
+  // inline edit form open, since uploading a photo isn't "done editing" the
+  // way submitting the form is.
+  function applyPlayerUpdate(updated: Player) {
     setPlayers((ps) => ps.map((p) => (p.id === updated.id ? updated : p)))
     setLots((ls) => ls.map((l) => (l.player.id === updated.id ? { ...l, player: updated } : l)))
-    setEditingPlayerId(null)
   }
 
   // A team/player can only be deleted once the server confirms it's unused by
@@ -561,6 +578,7 @@ export function AuctionSetup({ initial, initialLots, allTeams, allPlayers, acces
                           player={p}
                           accessToken={accessToken}
                           onSaved={handlePlayerSaved}
+                          onPhotoUpdated={applyPlayerUpdate}
                           onCancel={() => setEditingPlayerId(null)}
                           onDeleted={handlePlayerDeleted}
                         />
@@ -576,10 +594,7 @@ export function AuctionSetup({ initial, initialLots, allTeams, allPlayers, acces
                           onChange={() => togglePlayer(p.id)}
                           className="h-3.5 w-3.5 accent-primary"
                         />
-                        {p.avatarUrl && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={p.avatarUrl} alt={p.name} className="h-7 w-7 rounded-full object-cover shrink-0" />
-                        )}
+                        <PlayerAvatar photoUrl={p.photoUrl} avatarUrl={p.avatarUrl} name={p.name} />
                         <span className="flex-1 text-sm">{p.name}</span>
                         <span className="text-xs text-muted-foreground">{ROLE_LABEL[p.role] ?? p.role}</span>
                         <span className="text-xs text-muted-foreground tabular-nums">
@@ -625,6 +640,7 @@ export function AuctionSetup({ initial, initialLots, allTeams, allPlayers, acces
                         player={lot.player}
                         accessToken={accessToken}
                         onSaved={handlePlayerSaved}
+                        onPhotoUpdated={applyPlayerUpdate}
                         onCancel={() => setEditingPlayerId(null)}
                         onDeleted={handlePlayerDeleted}
                       />
@@ -634,6 +650,7 @@ export function AuctionSetup({ initial, initialLots, allTeams, allPlayers, acces
                       <span className="w-6 shrink-0 text-xs text-muted-foreground tabular-nums">
                         #{lot.lotNumber}
                       </span>
+                      <PlayerAvatar photoUrl={lot.player.photoUrl} avatarUrl={lot.player.avatarUrl} name={lot.player.name} />
                       <span className="flex-1 text-sm">{lot.player.name}</span>
                       <span className="text-xs text-muted-foreground">{ROLE_LABEL[lot.player.role] ?? lot.player.role}</span>
                       {lot.player.organizationId != null && (

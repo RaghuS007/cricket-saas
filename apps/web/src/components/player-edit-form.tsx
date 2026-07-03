@@ -1,11 +1,13 @@
 'use client'
 
-import { useState } from 'react'
-import { apiDelete, apiPatch } from '@/lib/api'
+import { useRef, useState } from 'react'
+import { apiDelete, apiPatch, apiUpload, assetUrl } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { Player } from '@/lib/types'
+
+const MAX_PHOTO_BYTES = 3 * 1024 * 1024
 
 const ROLES = [
   { value: 'BAT', label: 'Batsman' },
@@ -18,22 +20,52 @@ interface Props {
   player: Player
   accessToken: string
   onSaved: (updated: Player) => void
+  // Fired when just the photo finishes uploading, so the parent list can
+  // refresh without closing this form the way a full onSaved (Save/Cancel) would.
+  onPhotoUpdated?: (updated: Player) => void
   onCancel: () => void
   // Fired once the player is deleted server-side, so the parent can drop it
   // from its lists and close this form.
   onDeleted?: (id: string) => void
 }
 
-export function PlayerEditForm({ player, accessToken, onSaved, onCancel, onDeleted }: Props) {
+export function PlayerEditForm({ player, accessToken, onSaved, onPhotoUpdated, onCancel, onDeleted }: Props) {
   const [name, setName] = useState(player.name)
   const [role, setRole] = useState(player.role)
   const [country, setCountry] = useState(player.country ?? '')
   const [basePrice, setBasePrice] = useState(player.basePrice)
   const [isOverseas, setIsOverseas] = useState(player.isOverseas)
   const [avatarUrl, setAvatarUrl] = useState(player.avatarUrl ?? '')
+  const [photoUrl, setPhotoUrl] = useState(player.photoUrl)
   const [loading, setLoading] = useState(false)
+  const [photoUploading, setPhotoUploading] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > MAX_PHOTO_BYTES) {
+      setError('Photo must be 3MB or smaller')
+      e.target.value = ''
+      return
+    }
+    setError(null)
+    setPhotoUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('photo', file)
+      const updated: Player = await apiUpload(`/players/${player.id}/photo`, accessToken, formData)
+      setPhotoUrl(updated.photoUrl)
+      onPhotoUpdated?.(updated)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to upload photo')
+    } finally {
+      setPhotoUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -48,7 +80,7 @@ export function PlayerEditForm({ player, accessToken, onSaved, onCancel, onDelet
         isOverseas,
         avatarUrl: avatarUrl.trim() || undefined,
       })
-      onSaved(updated)
+      onSaved({ ...updated, photoUrl })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save player')
     } finally {
@@ -118,6 +150,31 @@ export function PlayerEditForm({ player, accessToken, onSaved, onCancel, onDelet
         <div className="col-span-2 space-y-1">
           <Label htmlFor={`edit-avatar-${player.id}`} className="text-xs">Avatar URL</Label>
           <Input id={`edit-avatar-${player.id}`} value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://…" />
+        </div>
+        <div className="col-span-2 space-y-1">
+          <Label htmlFor={`edit-photo-${player.id}`} className="text-xs">Photo</Label>
+          <div className="flex items-center gap-2">
+            {photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={assetUrl(photoUrl)}
+                alt={`${name} photo`}
+                className="h-8 w-8 shrink-0 rounded-full border border-border object-cover"
+              />
+            ) : (
+              <div className="h-8 w-8 shrink-0 rounded-full border border-dashed border-border" />
+            )}
+            <input
+              ref={fileInputRef}
+              id={`edit-photo-${player.id}`}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={handlePhotoChange}
+              disabled={photoUploading}
+              className="flex-1 text-xs file:mr-2 file:rounded-md file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-xs file:font-medium file:text-primary"
+            />
+            {photoUploading && <span className="text-xs text-muted-foreground">Uploading…</span>}
+          </div>
         </div>
       </div>
       <div className="flex gap-2">

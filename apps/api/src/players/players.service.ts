@@ -4,9 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { unlink } from 'fs/promises';
+import { basename, join } from 'path';
 import { PrismaService } from '../prisma.service';
 import { CreatePlayerDto } from './dto/create-player.dto';
 import { UpdatePlayerDto } from './dto/update-player.dto';
+import { PLAYER_PHOTO_DIR } from './player-photo.storage';
 
 @Injectable()
 export class PlayersService {
@@ -53,6 +56,19 @@ export class PlayersService {
     if (!player) throw new NotFoundException(`Player ${id} not found`);
 
     return this.prisma.player.update({ where: { id }, data });
+  }
+
+  async updatePhoto(id: string, photoUrl: string, userId: string) {
+    const orgId = await this.getOrgId(userId);
+    const player = await this.prisma.player.findFirst({ where: { id, organizationId: orgId } });
+    if (!player) throw new NotFoundException(`Player ${id} not found`);
+
+    if (player.photoUrl) {
+      // Best-effort cleanup of the previous file; a missing file is not an error.
+      await unlink(join(PLAYER_PHOTO_DIR, basename(player.photoUrl))).catch(() => undefined);
+    }
+
+    return this.prisma.player.update({ where: { id }, data: { photoUrl } });
   }
 
   async remove(id: string, userId: string) {

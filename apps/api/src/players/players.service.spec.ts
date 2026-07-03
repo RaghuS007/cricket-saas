@@ -99,6 +99,42 @@ describe('PlayersService', () => {
     });
   });
 
+  describe('updatePhoto', () => {
+    it('sets the photoUrl on a player that belongs to the caller organization', async () => {
+      prisma.userProfile.findUnique.mockResolvedValue({ organizationId: 'org-1' });
+      prisma.player.findFirst.mockResolvedValue({ id: 'p-1', organizationId: 'org-1', photoUrl: null });
+      prisma.player.update.mockResolvedValue({ id: 'p-1', photoUrl: '/uploads/player-photos/new.png' });
+
+      await service.updatePhoto('p-1', '/uploads/player-photos/new.png', 'user-1');
+
+      expect(prisma.player.findFirst.mock.calls[0][0].where).toEqual({ id: 'p-1', organizationId: 'org-1' });
+      expect(prisma.player.update).toHaveBeenCalledWith({
+        where: { id: 'p-1' },
+        data: { photoUrl: '/uploads/player-photos/new.png' },
+      });
+    });
+
+    it('rejects uploading a photo for a global (organizationId: null) reference player', async () => {
+      prisma.userProfile.findUnique.mockResolvedValue({ organizationId: 'org-1' });
+      prisma.player.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updatePhoto('global-player', '/uploads/player-photos/new.png', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.player.update).not.toHaveBeenCalled();
+    });
+
+    it("rejects uploading a photo for another organization's player (IDOR)", async () => {
+      prisma.userProfile.findUnique.mockResolvedValue({ organizationId: 'org-1' });
+      prisma.player.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updatePhoto('victim-player', '/uploads/player-photos/new.png', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.player.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('remove', () => {
     it('deletes a player that belongs to the caller organization and is unused', async () => {
       prisma.userProfile.findUnique.mockResolvedValue({ organizationId: 'org-1' });

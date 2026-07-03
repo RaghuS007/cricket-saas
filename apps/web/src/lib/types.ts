@@ -42,6 +42,7 @@ export interface Player {
   basePrice: string
   isOverseas: boolean
   avatarUrl: string | null
+  photoUrl: string | null
   organizationId?: string | null
 }
 
